@@ -1,0 +1,72 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+/* ElevenLabs-inspired design system: light, minimal, near-monochrome. */
+@theme {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #f5f5f5;
+  --color-border: #ececec;
+  --color-border-strong: #d9d9d9;
+
+  --color-fg: #0a0a0a;
+  --color-muted: #6b7280;
+  --color-subtle: #9ca3af;
+
+  /* Primary brand is near-black (monochrome look) */
+  --color-brand: #18181b;
+  --color-brand-strong: #000000;
+
+  /* Functional status colors, kept restrained */
+  --color-accent: #16a34a;
+  --color-warn: #d97706;
+  --color-danger: #dc2626;
+
+  --radius-xl: 14px;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+
+  /* Soft, layered shadows in place of hard borders */
+  --shadow-card: 0 1px 2px rgba(10, 10, 10, 0.04),
+    0 1px 3px rgba(10, 10, 10, 0.06);
+  --shadow-pop: 0 4px 12px rgba(10, 10, 10, 0.08),
+    0 2px 4px rgba(10, 10, 10, 0.04);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-fg) 12%, transparent);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-subtle);
+}

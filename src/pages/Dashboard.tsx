@@ -7,12 +7,13 @@ import {
   useBusinessMap,
   useBusinessOrders,
   useBusinessWallet,
+  useClientOrders,
   useMyBusinesses,
   useProfile,
   useUsageEvents,
   useWallet,
 } from "@/hooks/useData";
-import { WELCOME_BONUS_MINOR, OPERATION_LABEL } from "@/lib/constants";
+import { OPERATION_LABEL } from "@/lib/constants";
 import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user";
 import type { AccountType, OrderRecord, UsageEvent } from "@/types/ucp";
@@ -142,15 +143,35 @@ function MerchantActivityFeed({ events }: { events: UsageEvent[] }) {
   );
 }
 
-function purchasesCount(events: UsageEvent[]): number {
+const CLIENT_PAID_ORDER_STATUSES = new Set([
+  "paid",
+  "processing",
+  "shipped",
+  "delivered",
+]);
+
+function paidClientOrders(orders: OrderRecord[]): OrderRecord[] {
+  return orders.filter((order) => CLIENT_PAID_ORDER_STATUSES.has(order.status));
+}
+
+function purchasesCount(orders: OrderRecord[], events: UsageEvent[]): number {
+  const paid = paidClientOrders(orders);
+  if (paid.length > 0) return paid.length;
   return events.filter((e) => e.is_purchase).length;
 }
 
-function uniqueMerchants(events: UsageEvent[]): number {
+function uniqueMerchants(orders: OrderRecord[], events: UsageEvent[]): number {
+  const fromOrders = new Set(orders.map((o) => o.business_id).filter(Boolean));
+  if (fromOrders.size > 0) return fromOrders.size;
   return new Set(events.map((e) => e.business_id).filter(Boolean)).size;
 }
 
-function spendMinor(events: UsageEvent[]): number {
+function spendMinor(orders: OrderRecord[], events: UsageEvent[]): number {
+  const paidTotal = paidClientOrders(orders).reduce(
+    (sum, order) => sum + order.total_minor,
+    0,
+  );
+  if (paidTotal > 0) return paidTotal;
   return events
     .filter((e) => e.is_purchase && e.revenue_minor)
     .reduce((sum, e) => sum + (e.revenue_minor ?? 0), 0);
@@ -178,6 +199,8 @@ export default function Dashboard() {
       ? { businessIds, enabled: businessIds.length > 0 }
       : { profileId: user?.id, enabled: Boolean(user?.id) },
   );
+  const { data: clientOrders = [], isLoading: clientOrdersLoading } =
+    useClientOrders(accountType === "client" ? user?.id : undefined);
 
   const merchantBusinessId = myBusinesses[0]?.id;
   const { data: merchantOrders = [] } = useBusinessOrders(merchantBusinessId);
@@ -204,7 +227,13 @@ export default function Dashboard() {
     user?.email,
   );
 
-  if (profileLoading || walletLoading || businessesLoading || eventsLoading) {
+  if (
+    profileLoading ||
+    walletLoading ||
+    businessesLoading ||
+    eventsLoading ||
+    (accountType === "client" && clientOrdersLoading)
+  ) {
     return (
       <div className="py-12 text-center text-sm text-[var(--color-muted)]">
         Cargando datos...
@@ -303,16 +332,9 @@ export default function Dashboard() {
       <div className="flex-1 space-y-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           <Card>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-[var(--color-muted)]">
-                Saldo disponible
-              </span>
-              {wallet ? (
-                <Badge tone="accent">
-                  +{formatMoney(WELCOME_BONUS_MINOR, wallet.currency)}
-                </Badge>
-              ) : null}
-            </div>
+            <span className="text-xs text-[var(--color-muted)]">
+              Saldo disponible
+            </span>
             <div className="mt-2 text-2xl font-bold">
               {wallet
                 ? formatMoney(wallet.available_minor, wallet.currency)
@@ -325,13 +347,20 @@ export default function Dashboard() {
             ) : null}
           </Card>
           <Stat
-            value={purchasesCount(events)}
+            value={purchasesCount(clientOrders, events)}
             label="Compras agenticas"
             tone="brand"
           />
-          <Stat value={uniqueMerchants(events)} label="Comercios consultados" />
           <Stat
-            value={wallet ? formatMoney(spendMinor(events), wallet.currency) : "-"}
+            value={uniqueMerchants(clientOrders, events)}
+            label="Comercios consultados"
+          />
+          <Stat
+            value={
+              wallet
+                ? formatMoney(spendMinor(clientOrders, events), wallet.currency)
+                : "-"
+            }
             label="Pagos efectuados"
             tone="accent"
           />

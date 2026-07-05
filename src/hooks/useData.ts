@@ -38,6 +38,7 @@ export const queryKeys = {
   wallet: (id: string) => ["wallet", id] as const,
   businessWallet: (businessId: string) => ["businessWallet", businessId] as const,
   businessOrders: (businessId: string) => ["businessOrders", businessId] as const,
+  clientOrders: (profileId: string) => ["clientOrders", profileId] as const,
   payments: (walletId: string) => ["payments", walletId] as const,
   usageEvents: (scope: string) => ["usageEvents", scope] as const,
   businesses: () => ["businesses"] as const,
@@ -111,6 +112,24 @@ export function useBusinessOrders(businessId: string | undefined) {
         .from("orders")
         .select("*")
         .eq("business_id", businessId!)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []).map(mapOrder);
+    },
+  });
+}
+
+export function useClientOrders(profileId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.clientOrders(profileId ?? ""),
+    enabled: Boolean(profileId),
+    queryFn: async () => {
+      const sb = getSupabase();
+      const { data, error } = await sb
+        .from("orders")
+        .select("*")
+        .eq("profile_id", profileId!)
         .order("created_at", { ascending: false })
         .limit(100);
       if (error) throw error;

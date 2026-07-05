@@ -61,16 +61,7 @@ Expect `200` + `access-control-allow-origin: https://genko-portal-production.up.
 
 ---
 
-## 3. Supabase Auth
-
-**Authentication → URL configuration:**
-
-- Site URL: `https://genko-portal-production.up.railway.app`
-- Redirect URLs: `https://genko-portal-production.up.railway.app/**`, `http://localhost:5173/**`
-
----
-
-## Local dev
+## 3. Local dev
 
 ```powershell
 # Terminal 1 — genko-backend

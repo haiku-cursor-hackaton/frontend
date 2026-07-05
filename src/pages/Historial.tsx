@@ -3,11 +3,18 @@ import {
   Badge,
   Card,
   MobileRecordList,
+  Page,
   Pagination,
   TabPanel,
   Tabs,
 } from "@/components/ui";
-import { useBusinessMap, useUsageEvents } from "@/hooks/useData";
+import { useAuth } from "@/auth/AuthContext";
+import {
+  useBusinessMap,
+  useMyBusinesses,
+  useProfile,
+  useUsageEvents,
+} from "@/hooks/useData";
 import { OPERATION_LABEL } from "@/lib/constants";
 import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
 import type { UCPOperation, UsageEvent } from "@/types/ucp";
@@ -37,9 +44,26 @@ const PURCHASE_OPS: UCPOperation[] = ["create_checkout", "complete_checkout"];
 const HISTORY_PAGE_SIZE = 8;
 
 export default function Historial() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<Filter>("todos");
   const [page, setPage] = useState(1);
-  const { data: usageEvents = [], isLoading } = useUsageEvents();
+  const { data: profile, isLoading: profileLoading } = useProfile();
+  const { data: myBusinesses = [], isLoading: businessesLoading } =
+    useMyBusinesses();
+  const accountType =
+    profile?.account_type ??
+    (myBusinesses.length > 0
+      ? "business"
+      : user?.accountType ?? "client");
+  const businessIds = useMemo(
+    () => myBusinesses.map((business) => business.id),
+    [myBusinesses],
+  );
+  const { data: usageEvents = [], isLoading } = useUsageEvents(
+    accountType === "business"
+      ? { businessIds, enabled: businessIds.length > 0 }
+      : { profileId: user?.id, enabled: Boolean(user?.id) },
+  );
   const { businessById } = useBusinessMap();
 
   const rows = useMemo(() => {
@@ -66,7 +90,7 @@ export default function Historial() {
     currentPage * HISTORY_PAGE_SIZE,
   );
 
-  if (isLoading) {
+  if (profileLoading || businessesLoading || isLoading) {
     return (
       <div className="py-12 text-center text-sm text-[var(--color-muted)]">
         Cargando historial...
@@ -75,8 +99,8 @@ export default function Historial() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+    <Page>
+      <div className="flex shrink-0 flex-col gap-3">
         <div>
           <h1 className="text-lg font-semibold">Historial agentico</h1>
           <p className="mt-1 text-xs text-[var(--color-muted)]">
@@ -87,6 +111,7 @@ export default function Historial() {
           ariaLabel="Filtros de historial"
           active={filter}
           onChange={setFilter}
+          className="w-full"
           tabs={[
             { id: "todos", label: "Todos", meta: usageEvents.length },
             {
@@ -106,7 +131,7 @@ export default function Historial() {
         />
       </div>
 
-      <TabPanel key={filter} className="flex-1">
+      <TabPanel key={filter}>
         <div className="md:hidden">
           <MobileRecordList
             records={paginatedRows.map((e) => {
@@ -273,6 +298,6 @@ export default function Historial() {
           />
         </Card>
       </TabPanel>
-    </div>
+    </Page>
   );
 }

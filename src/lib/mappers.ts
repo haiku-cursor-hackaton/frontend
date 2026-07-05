@@ -88,6 +88,7 @@ export function mapBusiness(row: Tables<"businesses">): Business {
     owner_id: row.owner_id,
     name: row.name,
     category: row.category ?? "",
+    description: row.description ?? undefined,
     status: row.status as BusinessStatus,
     well_known_url: row.well_known_url,
     ucp_base_url: row.ucp_base_url ?? "",

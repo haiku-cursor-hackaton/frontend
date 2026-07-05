@@ -33,6 +33,7 @@ export type Database = {
         Row: {
           category: string | null;
           created_at: string;
+          description: string | null;
           encrypted_ucp_api_key: string | null;
           id: string;
           name: string;
@@ -132,7 +133,7 @@ export type Database = {
       usage_events: {
         Row: {
           api_key_id: string | null;
-          business_id: string;
+          business_id: string | null;
           capability: string | null;
           checkout_session_id: string | null;
           client_name: string | null;

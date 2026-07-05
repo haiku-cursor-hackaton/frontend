@@ -1,29 +1,42 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
-import { useBootstrapAccount } from "@/hooks/useData";
+import { useBootstrapAccount, useBootstrapMerchant } from "@/hooks/useData";
 import { WELCOME_BONUS_MINOR } from "@/lib/constants";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import ThemeToggle from "@/components/ThemeToggle";
 import { formatMoney } from "@/lib/money";
+import type { AccountType } from "@/types/ucp";
 
 export default function Login() {
   const { signIn, signUp, signInWithOAuth, demoMode } = useAuth();
   const bootstrap = useBootstrapAccount();
+  const bootstrapMerchant = useBootstrapMerchant();
   const navigate = useNavigate();
   const [isSignUp, setIsSignUp] = useState(false);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [accountType, setAccountType] = useState<AccountType>("client");
+  const [businessCategory, setBusinessCategory] = useState("");
+  const [businessDescription, setBusinessDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
-    const fn = isSignUp ? signUp : signIn;
-    const { error: authError } = await fn(email, password);
+    if (isSignUp && accountType === "business") {
+      if (!businessCategory.trim() || !businessDescription.trim()) {
+        setError("Categoria y descripcion son obligatorias.");
+        return;
+      }
+    }
+    setBusy(true);
+    const { error: authError } = isSignUp
+      ? await signUp(email, password, accountType, name.trim())
+      : await signIn(email, password);
     if (authError) {
       setBusy(false);
       setError(authError);
@@ -32,7 +45,19 @@ export default function Login() {
 
     if (isSignUp && isSupabaseConfigured) {
       try {
-        await bootstrap.mutateAsync({});
+        const trimmedName = name.trim();
+        if (accountType === "client") {
+          await bootstrap.mutateAsync({
+            full_name: trimmedName || undefined,
+          });
+        } else if (accountType === "business") {
+          await bootstrapMerchant.mutateAsync({
+            full_name: trimmedName || undefined,
+            business_name: trimmedName || undefined,
+            category: businessCategory.trim(),
+            description: businessDescription.trim(),
+          });
+        }
       } catch (err) {
         setError(
           err instanceof Error
@@ -43,7 +68,7 @@ export default function Login() {
     }
 
     setBusy(false);
-    navigate("/");
+    navigate(isSignUp && accountType === "business" ? "/comercio" : "/");
   }
 
   async function oauth(provider: "google" | "github") {
@@ -56,7 +81,6 @@ export default function Login() {
   return (
     <div className="relative grid min-h-screen lg:grid-cols-2">
       <ThemeToggle className="absolute right-4 top-4 z-10" />
-      {/* Panel izquierdo — branding */}
       <div className="hidden flex-col justify-between bg-[var(--color-brand-strong)] p-10 text-[var(--color-on-brand)] lg:flex">
         <div className="flex items-center gap-2.5">
           <span className="grid h-8 w-8 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-on-brand)_16%,transparent)] text-sm font-bold">
@@ -83,7 +107,6 @@ export default function Login() {
         </p>
       </div>
 
-      {/* Panel derecho — formulario */}
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[360px]">
           <div className="mb-8 lg:hidden">
@@ -107,6 +130,90 @@ export default function Login() {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {isSignUp ? (
+              <div>
+                <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                  Tipo de cuenta
+                </span>
+                <div className="grid grid-cols-2 gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
+                  {[
+                    {
+                      id: "client" as AccountType,
+                      label: "Cliente",
+                      hint: "Wallet y agente MCP",
+                    },
+                    {
+                      id: "business" as AccountType,
+                      label: "Comercio",
+                      hint: "Tienda y SDK",
+                    },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setAccountType(option.id)}
+                      className={`rounded-md px-3 py-2 text-left transition-all ${
+                        accountType === option.id
+                          ? "bg-[var(--color-surface-2)] text-[var(--color-fg)] shadow-[var(--shadow-card)]"
+                          : "text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]/60"
+                      }`}
+                    >
+                      <span className="block text-sm font-medium">
+                        {option.label}
+                      </span>
+                      <span className="block text-[10px] text-[var(--color-subtle)]">
+                        {option.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {isSignUp ? (
+              <Field
+                label={
+                  accountType === "business"
+                    ? "Nombre del comercio"
+                    : "Nombre"
+                }
+              >
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={
+                    accountType === "business"
+                      ? "Mi tienda"
+                      : "Tu nombre"
+                  }
+                  autoComplete="name"
+                  required
+                />
+              </Field>
+            ) : null}
+
+            {isSignUp && accountType === "business" ? (
+              <>
+                <Field label="Categoria">
+                  <Input
+                    value={businessCategory}
+                    onChange={(e) => setBusinessCategory(e.target.value)}
+                    placeholder="Ej. moda, electronica, alimentos"
+                    required
+                  />
+                </Field>
+                <Field label="Descripcion">
+                  <Textarea
+                    value={businessDescription}
+                    onChange={(e) => setBusinessDescription(e.target.value)}
+                    placeholder="Cuenta que vende tu tienda y que la hace unica"
+                    rows={3}
+                    required
+                  />
+                </Field>
+              </>
+            ) : null}
+
             <Field label="Email">
               <Input
                 type="email"

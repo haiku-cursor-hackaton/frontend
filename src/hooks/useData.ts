@@ -4,9 +4,19 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthContext";
-import { connectClient, registerMerchant } from "@/lib/api";
-import type { RegisterMerchantResponse } from "@/lib/api";
-import { MCP_KEY_STORAGE } from "@/lib/constants";
+import {
+  connectClient,
+  connectMerchant,
+  linkMerchantUrl,
+  registerMerchant,
+} from "@/lib/api";
+import type {
+  ConnectMerchantResponse,
+  LinkMerchantResponse,
+  RegisterMerchantResponse,
+} from "@/lib/api";
+import { MCP_KEY_STORAGE, SDK_INSTALL_PROMPT_STORAGE, SDK_KEY_STORAGE } from "@/lib/constants";
+import { buildSdkInstallPrompt } from "@/lib/sdk-config";
 import {
   mapApiKey,
   mapBusiness,
@@ -24,10 +34,10 @@ export const queryKeys = {
   profile: (id: string) => ["profile", id] as const,
   wallet: (id: string) => ["wallet", id] as const,
   payments: (walletId: string) => ["payments", walletId] as const,
-  usageEvents: (profileId: string) => ["usageEvents", profileId] as const,
+  usageEvents: (scope: string) => ["usageEvents", scope] as const,
   businesses: () => ["businesses"] as const,
   myBusinesses: (ownerId: string) => ["myBusinesses", ownerId] as const,
-  apiKeys: (profileId: string) => ["apiKeys", profileId] as const,
+  apiKeys: (scope: string) => ["apiKeys", scope] as const,
   domains: (businessId: string) => ["domains", businessId] as const,
   checkoutSessions: (profileId: string) => ["checkoutSessions", profileId] as const,
 };
@@ -86,18 +96,35 @@ export function usePayments(walletId: string | undefined) {
   });
 }
 
-export function useUsageEvents() {
+export function useUsageEvents(scope?: {
+  profileId?: string;
+  businessIds?: string[];
+  enabled?: boolean;
+}) {
   const { user } = useAuth();
+  const profileId = scope?.profileId ?? user?.id;
+  const businessIds = scope?.businessIds ?? [];
+  const scopeKey = businessIds.length
+    ? `business:${businessIds.join(",")}`
+    : `profile:${profileId ?? ""}`;
+  const enabled =
+    scope?.enabled ?? (businessIds.length > 0 || Boolean(profileId));
   return useQuery({
-    queryKey: queryKeys.usageEvents(user?.id ?? ""),
-    enabled: Boolean(user?.id),
+    queryKey: queryKeys.usageEvents(scopeKey),
+    enabled,
     queryFn: async () => {
       const sb = getSupabase();
-      const { data, error } = await sb
+      let query = sb
         .from("usage_events")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(200);
+      if (businessIds.length > 0) {
+        query = query.in("business_id", businessIds);
+      } else {
+        query = query.eq("profile_id", profileId!);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []).map(mapUsageEvent);
     },
@@ -152,17 +179,34 @@ export function useMerchantDomains(businessId: string | undefined) {
   });
 }
 
-export function useApiKeys() {
+export function useApiKeys(scope?: {
+  profileId?: string;
+  businessIds?: string[];
+  enabled?: boolean;
+}) {
   const { user } = useAuth();
+  const profileId = scope?.profileId ?? user?.id;
+  const businessIds = scope?.businessIds ?? [];
+  const scopeKey = businessIds.length
+    ? `business:${businessIds.join(",")}`
+    : `profile:${profileId ?? ""}`;
+  const enabled =
+    scope?.enabled ?? (businessIds.length > 0 || Boolean(profileId));
   return useQuery({
-    queryKey: queryKeys.apiKeys(user?.id ?? ""),
-    enabled: Boolean(user?.id),
+    queryKey: queryKeys.apiKeys(scopeKey),
+    enabled,
     queryFn: async () => {
       const sb = getSupabase();
-      const { data, error } = await sb
+      let query = sb
         .from("api_keys")
         .select("*")
         .order("created_at", { ascending: false });
+      if (businessIds.length > 0) {
+        query = query.in("business_id", businessIds);
+      } else {
+        query = query.eq("profile_id", profileId!);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []).map(mapApiKey);
     },
@@ -259,9 +303,35 @@ export function useUpdateProfile() {
   });
 }
 
-export function useRevokeApiKey() {
+export function useUpdateBusiness() {
   const qc = useQueryClient();
   const { user } = useAuth();
+  return useMutation({
+    mutationFn: async ({
+      businessId,
+      ...fields
+    }: {
+      businessId: string;
+      category?: string;
+      description?: string;
+    }) => {
+      const sb = getSupabase();
+      const { error } = await sb
+        .from("businesses")
+        .update(fields)
+        .eq("id", businessId)
+        .eq("owner_id", user!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.businesses() });
+    },
+  });
+}
+
+export function useRevokeApiKey() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (keyId: string) => {
       const sb = getSupabase();
@@ -272,7 +342,7 @@ export function useRevokeApiKey() {
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.apiKeys(user!.id) });
+      qc.invalidateQueries({ queryKey: ["apiKeys"] });
     },
   });
 }
@@ -288,7 +358,7 @@ export function useIssueApiKey() {
       ) as Record<string, string>;
       stored[result.mcp_api_key_prefix] = result.mcp_api_key;
       sessionStorage.setItem(MCP_KEY_STORAGE, JSON.stringify(stored));
-      qc.invalidateQueries({ queryKey: queryKeys.apiKeys(user!.id) });
+      qc.invalidateQueries({ queryKey: ["apiKeys"] });
       qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.wallet(user!.id) });
     },
@@ -309,7 +379,7 @@ export function useBootstrapAccount() {
       sessionStorage.setItem(MCP_KEY_STORAGE, JSON.stringify(stored));
       qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.wallet(user!.id) });
-      qc.invalidateQueries({ queryKey: queryKeys.apiKeys(user!.id) });
+      qc.invalidateQueries({ queryKey: ["apiKeys"] });
     },
   });
 }
@@ -328,7 +398,60 @@ export function useRegisterMerchant() {
       qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.businesses() });
-      qc.invalidateQueries({ queryKey: queryKeys.apiKeys(user!.id) });
+      qc.invalidateQueries({ queryKey: ["apiKeys"] });
+      qc.invalidateQueries({ queryKey: queryKeys.domains(result.business_id) });
+    },
+  });
+}
+
+export function useBootstrapMerchant() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (body?: {
+      full_name?: string;
+      business_name?: string;
+      category?: string;
+      description?: string;
+    }): Promise<ConnectMerchantResponse> => connectMerchant(body),
+    onSuccess: (result) => {
+      if (result.sdk_api_key && result.sdk_api_key_prefix) {
+        storeSdkKey(result.sdk_api_key_prefix, result.sdk_api_key);
+      }
+      if (result.sdk_install_prompt) {
+        sessionStorage.setItem(
+          SDK_INSTALL_PROMPT_STORAGE,
+          result.sdk_install_prompt,
+        );
+      } else if (result.sdk_api_key) {
+        sessionStorage.setItem(
+          SDK_INSTALL_PROMPT_STORAGE,
+          buildSdkInstallPrompt(result.sdk_api_key),
+        );
+      }
+      qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.businesses() });
+      qc.invalidateQueries({ queryKey: ["apiKeys"] });
+    },
+  });
+}
+
+export function useLinkMerchant(businessId: string | undefined) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (body: {
+      root_url: string;
+      ucp_inbound_api_key?: string;
+    }): Promise<LinkMerchantResponse> => {
+      if (!businessId) throw new Error("Falta business_id para vincular URL");
+      return linkMerchantUrl(businessId, body);
+    },
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.businesses() });
       qc.invalidateQueries({ queryKey: queryKeys.domains(result.business_id) });
     },
   });
@@ -351,6 +474,34 @@ export function storeMcpKey(prefix: string, key: string) {
   ) as Record<string, string>;
   stored[prefix] = key;
   sessionStorage.setItem(MCP_KEY_STORAGE, JSON.stringify(stored));
+}
+
+export function getStoredSdkKey(prefix: string): string | undefined {
+  try {
+    const stored = JSON.parse(
+      sessionStorage.getItem(SDK_KEY_STORAGE) ?? "{}",
+    ) as Record<string, string>;
+    return stored[prefix];
+  } catch {
+    return undefined;
+  }
+}
+
+export function storeSdkKey(prefix: string, key: string) {
+  const stored = JSON.parse(
+    sessionStorage.getItem(SDK_KEY_STORAGE) ?? "{}",
+  ) as Record<string, string>;
+  stored[prefix] = key;
+  sessionStorage.setItem(SDK_KEY_STORAGE, JSON.stringify(stored));
+}
+
+export function getStoredSdkInstallPrompt(): string | undefined {
+  try {
+    const stored = sessionStorage.getItem(SDK_INSTALL_PROMPT_STORAGE);
+    return stored || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useMcpKeys(apiKeys: ApiKey[] | undefined) {

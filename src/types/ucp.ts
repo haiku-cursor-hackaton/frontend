@@ -5,9 +5,9 @@
  *
  * 1. Objetos del protocolo UCP (Product, LineItem, Total, Checkout, Order, ...)
  *    provenientes del **comercio** — versión 2026-04-08.
- * 2. Entidades de la BD de la **plataforma** (Supabase) definidas en
- *    `docs/db-schema.md`: profiles, businesses, api_keys, wallets,
- *    checkout_sessions, orders, payments, usage_events, merchant_domains.
+ * 2. Entidades de la BD de la **plataforma** (Supabase) que utiliza el backend
+ *    FastAPI (`backend/app/`): profiles, businesses, merchant_domains,
+ *    api_keys, wallets, checkout_sessions, orders, payments, usage_events.
  *
  * Todos los importes están en UNIDADES MENORES: `2500` == `$25.00`.
  * Todas las fechas son RFC 3339.
@@ -16,7 +16,7 @@
 export type CurrencyCode = "USD" | "EUR" | "MXN" | "GTQ";
 
 // ---------------------------------------------------------------------------
-// UCP (comercio) — se recibe de una tienda vía UCP REST / MCP.
+// UCP (comercio) — se recibe de una tienda vía UCP REST o del gateway MCP.
 // ---------------------------------------------------------------------------
 
 export type TotalType =
@@ -84,7 +84,10 @@ export type UCPCapability =
   | "dev.ucp.shopping.catalog.search"
   | "dev.ucp.shopping.catalog.lookup"
   | "dev.ucp.shopping.checkout"
-  | "dev.ucp.shopping.order";
+  | "dev.ucp.shopping.order"
+  // Legacy: perfiles cacheados por builds anteriores del backend/SDK.
+  | "dev.ucp.shopping.catalog"
+  | "dev.ucp.shopping.catalog.product";
 
 // ---------------------------------------------------------------------------
 // Plataforma (Supabase) — lo que guarda genko.
@@ -97,6 +100,7 @@ export interface Profile {
   account_type: AccountType;
   full_name: string;
   email: string;
+  phone?: string;
   country?: string;
   created_at: string;
 }
@@ -122,13 +126,24 @@ export interface MerchantDomain {
   verified: boolean;
 }
 
-/** Scopes soportados por las API keys (ver `docs/db-explicacion-intuitiva.md`). */
-export type ApiKeyScope =
+/**
+ * Scopes de API keys. Difieren según `key_type`:
+ *   - `mcp`  → catalog:read, checkout:write, purchase:execute, order:read, wallet:read
+ *   - `sdk`  → payment:verify, payment:accredit, payment:release
+ */
+export type McpApiKeyScope =
   | "catalog:read"
   | "checkout:write"
   | "purchase:execute"
   | "order:read"
   | "wallet:read";
+
+export type SdkApiKeyScope =
+  | "payment:verify"
+  | "payment:accredit"
+  | "payment:release";
+
+export type ApiKeyScope = McpApiKeyScope | SdkApiKeyScope;
 
 export type ApiKeyType = "mcp" | "sdk";
 export type ApiKeyStatus = "active" | "revoked";
@@ -139,12 +154,19 @@ export interface ApiKey {
   profile_id?: string;
   business_id?: string;
   label: string;
-  /** Prefijo visible, tipo `mcp_live_9f2c…`. Nunca guardamos la key completa. */
+  /**
+   * Prefijo visible que el backend emite:
+   *   - `gk_mcp_<10 chars>`  para keys tipo `mcp`
+   *   - `gk_sdk_<10 chars>`  para keys tipo `sdk`
+   *
+   * El plaintext completo se muestra solo una vez al emitirla.
+   */
   key_prefix: string;
   scopes: ApiKeyScope[];
   status: ApiKeyStatus;
   created_at: string;
   revoked_at?: string;
+  last_used_at?: string;
 }
 
 export interface Wallet {
@@ -170,6 +192,7 @@ export interface CheckoutSession {
 }
 
 export type OrderStatus =
+  | "created"
   | "pending_payment"
   | "paid"
   | "processing"
@@ -222,13 +245,14 @@ export interface Payment {
 export type Transport = "mcp" | "rest" | "a2a" | "embedded";
 
 /** Grupo UCP al que pertenece una operación. */
-export type UCPCapabilityGroup = "catalog" | "checkout" | "order";
+export type UCPCapabilityGroup = "catalog" | "checkout" | "order" | "wallet";
 
 /**
  * Tools UCP soportadas (9 operaciones) — usadas como `operation` en
  * `usage_events` y como catálogo del playground del agente.
  */
 export type UCPOperation =
+  | "get_user_profile"
   | "search_catalog"
   | "lookup_catalog"
   | "get_product"
@@ -271,4 +295,52 @@ export interface MerchantStats {
   revenue_7d_minor: number;
   currency: CurrencyCode;
   byDay: { day: string; queries: number; purchases: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Payment authorizations (endpoint SDK del comercio → plataforma)
+// ---------------------------------------------------------------------------
+
+/**
+ * Estado devuelto por `GET /v1/payment-authorizations/{id}` — proyección de
+ * `payments.status` a los estados que consume el SDK del comercio.
+ */
+export type AuthorizationStatus =
+  | "created"
+  | "reserved"
+  | "submitted"
+  | "authorized"
+  | "completed"
+  | "released"
+  | "failed";
+
+// ---------------------------------------------------------------------------
+// Personas (solo modo demo del frontend)
+// ---------------------------------------------------------------------------
+
+/**
+ * Una "persona" es un usuario pre-armado que se puede usar en modo demo para
+ * probar la app desde distintos roles sin backend. Está pensada solo para el
+ * frontend; en Supabase real, cada `Profile` viene de auth.
+ *
+ * La persona referencia por id a las entidades del schema — `wallet_id` y
+ * `business_id` son punteros a filas del mock; el resto se resuelve por
+ * `profile_id`.
+ */
+export interface Persona {
+  id: string;
+  profile_id: string;
+  display_name: string;
+  short_name: string;
+  role_label: string;
+  account_type: AccountType;
+  avatar_color: string;
+  summary: string;
+  password: string;
+  /** Wallet propia del cliente (undefined para admins). */
+  wallet_id?: string;
+  /** Comercio que administra (solo cuando `account_type === "business"`). */
+  business_id?: string;
+  /** Tag rápido para la UI: "Nuevo", "Power user", "Sin saldo", etc. */
+  badge?: string;
 }

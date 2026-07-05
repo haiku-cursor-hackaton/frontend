@@ -5,206 +5,339 @@ import {
   Card,
   Field,
   Input,
+  MobileRecordList,
+  Pagination,
   SectionTitle,
+  TabPanel,
+  Tabs,
 } from "@/components/ui";
-import { apiKeys as mockApiKeys, currentProfile } from "@/data/mock";
+import {
+  useApiKeys,
+  useIssueApiKey,
+  useProfile,
+  useRevokeApiKey,
+  useUpdateProfile,
+} from "@/hooks/useData";
 import { formatDate } from "@/lib/money";
-import type { ApiKey } from "@/types/ucp";
 
-const SCOPE_HINT: Record<ApiKey["scopes"][number], string> = {
-  "catalog:read": "leer catálogo de comercios",
-  "checkout:write": "crear/actualizar checkouts",
-  "purchase:execute": "completar la compra",
-  "order:read": "consultar órdenes",
-  "wallet:read": "leer saldo simulado",
-};
+type ProfileTab = "cuenta" | "credenciales";
+const KEYS_PAGE_SIZE = 5;
 
 export default function Perfil() {
-  const mineOnly = useMemo(
-    () =>
-      mockApiKeys.filter(
-        (k) => k.key_type === "mcp" && k.profile_id === currentProfile.id,
-      ),
-    [],
+  const { data: profile, isLoading } = useProfile();
+  const { data: allKeys = [] } = useApiKeys();
+  const updateProfile = useUpdateProfile();
+  const issueKey = useIssueApiKey();
+  const revokeKey = useRevokeApiKey();
+
+  const [tab, setTab] = useState<ProfileTab>("cuenta");
+  const [fullName, setFullName] = useState("");
+  const [country, setCountry] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [issuedKey, setIssuedKey] = useState<string | null>(null);
+  const [issuedMcpUrl, setIssuedMcpUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [keysPage, setKeysPage] = useState(1);
+
+  const keys = useMemo(
+    () => allKeys.filter((k) => k.key_type === "mcp"),
+    [allKeys],
+  );
+  const keysPageCount = Math.max(1, Math.ceil(keys.length / KEYS_PAGE_SIZE));
+  const currentKeysPage = Math.min(keysPage, keysPageCount);
+  const paginatedKeys = keys.slice(
+    (currentKeysPage - 1) * KEYS_PAGE_SIZE,
+    currentKeysPage * KEYS_PAGE_SIZE,
   );
 
-  const [keys, setKeys] = useState<ApiKey[]>(mineOnly);
-
-  function revoke(id: string) {
-    setKeys((prev) =>
-      prev.map((k) =>
-        k.id === id
-          ? { ...k, status: "revoked", revoked_at: new Date().toISOString() }
-          : k,
-      ),
+  if (isLoading) {
+    return (
+      <div className="py-12 text-center text-sm text-[var(--color-muted)]">
+        Cargando perfil...
+      </div>
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <h1 className="text-lg font-semibold">Perfil y credenciales</h1>
+  const displayName = fullName || profile?.full_name || "";
+  const displayCountry = country || profile?.country || "";
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSaved(false);
+    try {
+      await updateProfile.mutateAsync({
+        full_name: displayName || undefined,
+        country: displayCountry || undefined,
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al guardar");
+    }
+  }
+
+  async function handleIssueKey(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setIssuedKey(null);
+    setIssuedMcpUrl(null);
+    try {
+      const result = await issueKey.mutateAsync();
+      setIssuedKey(result.mcp_api_key);
+      setIssuedMcpUrl(result.mcp_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al emitir key");
+    }
+  }
+
+  async function revoke(id: string) {
+    setError(null);
+    try {
+      await revokeKey.mutateAsync(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al revocar");
+    }
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold">Perfil y credenciales</h1>
+        <Tabs<ProfileTab>
+          ariaLabel="Secciones de perfil"
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "cuenta", label: "Cuenta" },
+            { id: "credenciales", label: "Credenciales", meta: keys.length },
+          ]}
+        />
+      </div>
+
+      {error ? (
+        <p className="shrink-0 text-xs text-[var(--color-danger)]">{error}</p>
+      ) : null}
+
+      {tab === "cuenta" ? (
+        <TabPanel key="cuenta" className="flex-1">
           <SectionTitle hint="profiles">Datos de la cuenta</SectionTitle>
           <Card>
-            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-              <div className="grid grid-cols-2 gap-3">
+            <form className="space-y-4" onSubmit={handleSave}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Nombre completo">
-                  <Input defaultValue={currentProfile.full_name} />
+                  <Input
+                    value={displayName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder={profile?.full_name ?? ""}
+                  />
                 </Field>
                 <Field label="Email">
-                  <Input readOnly defaultValue={currentProfile.email} />
+                  <Input readOnly value={profile?.email ?? ""} />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="País">
-                  <Input defaultValue={currentProfile.country ?? ""} />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Pais">
+                  <Input
+                    value={displayCountry}
+                    onChange={(e) => setCountry(e.target.value)}
+                    placeholder={profile?.country ?? ""}
+                  />
                 </Field>
                 <Field label="Tipo de cuenta">
-                  <Input readOnly defaultValue={currentProfile.account_type} />
+                  <Input readOnly value={profile?.account_type ?? "client"} />
                 </Field>
               </div>
-              <Field label="Dirección de facturación">
-                <Input placeholder="Calle, ciudad, país" />
-              </Field>
-              <div className="flex justify-end">
-                <Button variant="primary">Guardar</Button>
-              </div>
-            </form>
-          </Card>
-        </div>
-
-        <div>
-          <SectionTitle hint="Bearer que usa tu agente en /ucp/mcp">
-            Nueva API key MCP
-          </SectionTitle>
-          <Card>
-            <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-              <Field label="Etiqueta">
-                <Input placeholder="ej. MCP · Claude Desktop" />
-              </Field>
-              <div>
-                <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
-                  Scopes
-                </span>
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                  {(
-                    [
-                      "catalog:read",
-                      "checkout:write",
-                      "purchase:execute",
-                      "order:read",
-                      "wallet:read",
-                    ] as ApiKey["scopes"][number][]
-                  ).map((s) => (
-                    <label
-                      key={s}
-                      className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-sm hover:border-[var(--color-border-strong)]"
-                    >
-                      <input
-                        type="checkbox"
-                        defaultChecked={s !== "wallet:read"}
-                        className="h-3.5 w-3.5 accent-[var(--color-brand-strong)]"
-                      />
-                      <code className="text-[var(--color-fg)]">{s}</code>
-                      <span className="ml-auto text-[10px] text-[var(--color-subtle)]">
-                        {SCOPE_HINT[s]}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost">Reset</Button>
-                <Button variant="primary">Emitir key</Button>
-              </div>
-              <p className="text-xs text-[var(--color-subtle)]">
-                La key completa se muestra <strong>una sola vez</strong> al
-                emitirla. Guardamos solo su hash y su prefijo.
-              </p>
-            </form>
-          </Card>
-        </div>
-      </div>
-
-      <div>
-        <SectionTitle hint="api_keys · profile_id = tú">
-          Tus API keys MCP
-        </SectionTitle>
-        <Card padded={false} className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-subtle)]">
-                <th className="px-5 py-3 font-medium">Etiqueta</th>
-                <th className="px-5 py-3 font-medium">Prefijo</th>
-                <th className="px-5 py-3 font-medium">Scopes</th>
-                <th className="px-5 py-3 font-medium">Estado</th>
-                <th className="px-5 py-3 font-medium">Creada</th>
-                <th className="px-5 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {keys.map((k) => (
-                <tr
-                  key={k.id}
-                  className="border-b border-[var(--color-border)] last:border-0"
+              <div className="flex items-center justify-end gap-2">
+                {saved ? (
+                  <span className="text-xs text-[var(--color-accent)]">
+                    Guardado
+                  </span>
+                ) : null}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={updateProfile.isPending}
                 >
-                  <td className="px-5 py-3">{k.label}</td>
-                  <td className="px-5 py-3 font-mono text-xs text-[var(--color-muted)]">
-                    {k.key_prefix}…
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {k.scopes.map((s) => (
-                        <Badge key={s} tone="neutral">
-                          {s}
-                        </Badge>
-                      ))}
+                  {updateProfile.isPending ? "Guardando..." : "Guardar"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </TabPanel>
+      ) : (
+        <TabPanel key="credenciales" className="flex-1">
+          <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div>
+              <SectionTitle hint="Bearer para /mcp">
+                Nueva API key MCP
+              </SectionTitle>
+              <Card>
+                <form className="space-y-4" onSubmit={handleIssueKey}>
+                  <p className="text-sm text-[var(--color-muted)]">
+                    Emite una nueva key MCP para llamar al gateway de Genko. La
+                    key completa se muestra una sola vez.
+                  </p>
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      disabled={issueKey.isPending}
+                    >
+                      {issueKey.isPending ? "Emitiendo..." : "Emitir key"}
+                    </Button>
+                  </div>
+                  {issuedKey ? (
+                    <div className="rounded-lg border border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] p-3">
+                      <p className="mb-1 text-xs font-medium text-[var(--color-accent)]">
+                        Copia esta key ahora; no se volvera a mostrar:
+                      </p>
+                      <code className="break-all text-xs">{issuedKey}</code>
+                      {issuedMcpUrl ? (
+                        <div className="mt-3 border-t border-[color-mix(in_srgb,var(--color-accent)_30%,transparent)] pt-3">
+                          <p className="mb-1 text-xs font-medium text-[var(--color-muted)]">
+                            MCP URL
+                          </p>
+                          <code className="break-all text-xs">{issuedMcpUrl}</code>
+                        </div>
+                      ) : null}
                     </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    {k.status === "active" ? (
-                      <Badge tone="accent">Activa</Badge>
-                    ) : (
-                      <Badge tone="danger">Revocada</Badge>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-[var(--color-muted)]">
-                    {formatDate(k.created_at)}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    {k.status === "active" ? (
-                      <Button variant="ghost" onClick={() => revoke(k.id)}>
-                        Revocar
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-[var(--color-subtle)]">
-                        —
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {keys.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-5 py-8 text-center text-sm text-[var(--color-subtle)]"
-                  >
-                    Aún no tienes API keys MCP.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </Card>
-        <p className="mt-2 text-xs text-[var(--color-subtle)]">
-          El gateway hashea la key completa y guarda solo{" "}
-          <code>key_prefix</code> + <code>key_hash</code>. La UI nunca ve la key
-          entera después de emitirla.
-        </p>
-      </div>
+                  ) : null}
+                  <p className="text-xs text-[var(--color-subtle)]">
+                    Guardamos solo el hash y el prefijo.
+                  </p>
+                </form>
+              </Card>
+            </div>
+
+            <div className="min-w-0">
+              <SectionTitle hint="api_keys - profile_id = tu">
+                Tus API keys MCP
+              </SectionTitle>
+              <div className="md:hidden">
+                <MobileRecordList
+                  records={paginatedKeys.map((k) => ({
+                    id: k.id,
+                    title: k.label,
+                    meta:
+                      k.status === "active" ? (
+                        <Badge tone="accent">Activa</Badge>
+                      ) : (
+                        <Badge tone="danger">Revocada</Badge>
+                      ),
+                    fields: [
+                      { label: "Prefijo", value: `${k.key_prefix}...` },
+                      { label: "Creada", value: formatDate(k.created_at) },
+                      {
+                        label: "Scopes",
+                        value: (
+                          <div className="flex flex-wrap gap-1">
+                            {k.scopes.map((s) => (
+                              <Badge key={s} tone="neutral">
+                                {s}
+                              </Badge>
+                            ))}
+                          </div>
+                        ),
+                      },
+                    ],
+                    footer:
+                      k.status === "active" ? (
+                        <div className="flex justify-end">
+                          <Button variant="ghost" onClick={() => revoke(k.id)}>
+                            Revocar
+                          </Button>
+                        </div>
+                      ) : null,
+                  }))}
+                  empty="Aun no tienes API keys MCP."
+                />
+                <Pagination
+                  page={currentKeysPage}
+                  pageSize={KEYS_PAGE_SIZE}
+                  total={keys.length}
+                  onPageChange={setKeysPage}
+                  className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]"
+                />
+              </div>
+              <Card padded={false} className="hidden overflow-hidden md:block">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-subtle)]">
+                        <th className="px-5 py-3 font-medium">Etiqueta</th>
+                        <th className="px-5 py-3 font-medium">Prefijo</th>
+                        <th className="px-5 py-3 font-medium">Scopes</th>
+                        <th className="px-5 py-3 font-medium">Estado</th>
+                        <th className="px-5 py-3 font-medium">Creada</th>
+                        <th className="px-5 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedKeys.map((k) => (
+                        <tr
+                          key={k.id}
+                          className="border-b border-[var(--color-border)] transition-colors last:border-0 hover:bg-[var(--color-surface-2)]/60"
+                        >
+                          <td className="px-5 py-3">{k.label}</td>
+                          <td className="px-5 py-3 font-mono text-xs text-[var(--color-muted)]">
+                            {k.key_prefix}...
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {k.scopes.map((s) => (
+                                <Badge key={s} tone="neutral">
+                                  {s}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3">
+                            {k.status === "active" ? (
+                              <Badge tone="accent">Activa</Badge>
+                            ) : (
+                              <Badge tone="danger">Revocada</Badge>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-[var(--color-muted)]">
+                            {formatDate(k.created_at)}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {k.status === "active" ? (
+                              <Button variant="ghost" onClick={() => revoke(k.id)}>
+                                Revocar
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-[var(--color-subtle)]">
+                                -
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {keys.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="px-5 py-8 text-center text-sm text-[var(--color-subtle)]"
+                          >
+                            Aun no tienes API keys MCP.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  page={currentKeysPage}
+                  pageSize={KEYS_PAGE_SIZE}
+                  total={keys.length}
+                  onPageChange={setKeysPage}
+                />
+              </Card>
+            </div>
+          </div>
+        </TabPanel>
+      )}
     </div>
   );
 }

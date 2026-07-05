@@ -1,28 +1,24 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Badge, Button, Card, SectionTitle, Stat, cx } from "@/components/ui";
 import {
-  WELCOME_BONUS_MINOR,
-  businessById,
-  currentBusinessId,
-  currentWallet,
-  merchantStats,
-  usageEvents,
-} from "@/data/mock";
+  Badge,
+  Button,
+  Card,
+  SectionTitle,
+  Stat,
+  TabPanel,
+  Tabs,
+} from "@/components/ui";
+import {
+  computeMerchantStats,
+  useBusinessMap,
+  useMyBusinesses,
+  useUsageEvents,
+  useWallet,
+} from "@/hooks/useData";
+import { WELCOME_BONUS_MINOR, OPERATION_LABEL } from "@/lib/constants";
 import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
-import type { UCPOperation, UsageEvent } from "@/types/ucp";
-
-const OPERATION_LABEL: Record<UCPOperation, string> = {
-  search_catalog: "Búsqueda de catálogo",
-  lookup_catalog: "Lookup de catálogo",
-  get_product: "Consulta de producto",
-  create_checkout: "Checkout creado",
-  get_checkout: "Consulta de checkout",
-  update_checkout: "Checkout actualizado",
-  complete_checkout: "Compra completada",
-  cancel_checkout: "Checkout cancelado",
-  get_order: "Consulta de orden",
-};
+import type { UsageEvent } from "@/types/ucp";
 
 const STATUS_TONE: Record<UsageEvent["status"], "accent" | "warn" | "danger"> = {
   ok: "accent",
@@ -30,13 +26,24 @@ const STATUS_TONE: Record<UsageEvent["status"], "accent" | "warn" | "danger"> = 
   error: "danger",
 };
 
-function UsageFeed({ events }: { events: UsageEvent[] }) {
+function UsageFeed({
+  events,
+  businessById,
+}: {
+  events: UsageEvent[];
+  businessById: (id: string) => { name: string } | undefined;
+}) {
   return (
     <div className="divide-y divide-[var(--color-border)]">
       {events.map((e) => {
-        const merchantName = businessById(e.business_id)?.name ?? e.business_id;
+        const merchantName = e.business_id
+          ? businessById(e.business_id)?.name ?? e.business_id
+          : "Sin comercio";
         return (
-          <div key={e.id} className="flex items-center gap-3 py-3">
+          <div
+            key={e.id}
+            className="flex flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:gap-3"
+          >
             <Badge tone={STATUS_TONE[e.status]}>
               {e.client_name ?? "agent"}
             </Badge>
@@ -56,7 +63,7 @@ function UsageFeed({ events }: { events: UsageEvent[] }) {
               </div>
             </div>
             {e.is_purchase && e.revenue_minor != null ? (
-              <div className="text-sm font-medium">
+              <div className="text-sm font-medium sm:text-right">
                 {formatMoney(e.revenue_minor, "USD")}
               </div>
             ) : (
@@ -74,7 +81,7 @@ function purchasesCount(events: UsageEvent[]): number {
 }
 
 function uniqueMerchants(events: UsageEvent[]): number {
-  return new Set(events.map((e) => e.business_id)).size;
+  return new Set(events.map((e) => e.business_id).filter(Boolean)).size;
 }
 
 function spendMinor(events: UsageEvent[]): number {
@@ -85,72 +92,92 @@ function spendMinor(events: UsageEvent[]): number {
 
 export default function Dashboard() {
   const [role, setRole] = useState<"cliente" | "comercio">("cliente");
+  const { data: wallet, isLoading: walletLoading } = useWallet();
+  const { data: events = [], isLoading: eventsLoading } = useUsageEvents();
+  const { data: myBusinesses = [] } = useMyBusinesses();
+  const { businessById } = useBusinessMap();
 
-  const clientEvents = useMemo(
-    () => [...usageEvents].sort((a, b) => (a.occurred_at < b.occurred_at ? 1 : -1)),
-    [],
+  const merchantBusinessId = myBusinesses[0]?.id;
+  const merchantStats = useMemo(
+    () =>
+      merchantBusinessId
+        ? computeMerchantStats(events, merchantBusinessId)
+        : null,
+    [events, merchantBusinessId],
   );
+
   const merchantEvents = useMemo(
     () =>
-      clientEvents.filter((e) => e.business_id === currentBusinessId),
-    [clientEvents],
+      merchantBusinessId
+        ? events.filter((e) => e.business_id === merchantBusinessId)
+        : [],
+    [events, merchantBusinessId],
   );
 
+  if (walletLoading || eventsLoading) {
+    return (
+      <div className="py-12 text-center text-sm text-[var(--color-muted)]">
+        Cargando datos…
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-semibold">Inicio</h1>
-        <div className="inline-flex rounded-lg border border-[var(--color-border)] p-0.5">
-          {(["cliente", "comercio"] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => setRole(r)}
-              className={cx(
-                "rounded-md px-3 py-1.5 text-sm capitalize transition-colors",
-                role === r
-                  ? "bg-[var(--color-surface-2)] font-medium text-[var(--color-fg)]"
-                  : "text-[var(--color-muted)]",
-              )}
-            >
-              Vista {r}
-            </button>
-          ))}
-        </div>
+        <Tabs<"cliente" | "comercio">
+          ariaLabel="Vistas de inicio"
+          active={role}
+          onChange={setRole}
+          tabs={[
+            { id: "cliente", label: "Cliente" },
+            { id: "comercio", label: "Comercio" },
+          ]}
+        />
       </div>
 
       {role === "cliente" ? (
-        <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <TabPanel key="cliente" className="flex-1">
+          <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             <Card>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-[var(--color-muted)]">
                   Saldo disponible
                 </span>
-                <Badge tone="accent">
-                  +{formatMoney(WELCOME_BONUS_MINOR, currentWallet.currency)}
-                </Badge>
+                {wallet ? (
+                  <Badge tone="accent">
+                    +{formatMoney(WELCOME_BONUS_MINOR, wallet.currency)}
+                  </Badge>
+                ) : null}
               </div>
               <div className="mt-2 text-2xl font-bold">
-                {formatMoney(currentWallet.available_minor, currentWallet.currency)}
+                {wallet
+                  ? formatMoney(wallet.available_minor, wallet.currency)
+                  : "—"}
               </div>
-              {currentWallet.reserved_minor > 0 ? (
+              {wallet && wallet.reserved_minor > 0 ? (
                 <div className="mt-1 text-xs text-[var(--color-warn)]">
-                  {formatMoney(currentWallet.reserved_minor, currentWallet.currency)}{" "}
-                  reservado
+                  {formatMoney(wallet.reserved_minor, wallet.currency)} reservado
                 </div>
               ) : null}
             </Card>
             <Stat
-              value={purchasesCount(clientEvents)}
+              value={purchasesCount(events)}
               label="Compras agénticas"
               tone="brand"
             />
             <Stat
-              value={uniqueMerchants(clientEvents)}
+              value={uniqueMerchants(events)}
               label="Comercios consultados"
             />
             <Stat
-              value={formatMoney(spendMinor(clientEvents), currentWallet.currency)}
+              value={
+                wallet
+                  ? formatMoney(spendMinor(events), wallet.currency)
+                  : "—"
+              }
               label="Pagos efectuados"
               tone="accent"
             />
@@ -178,14 +205,25 @@ export default function Dashboard() {
             <SectionTitle hint="Últimos usage_events vía UCP">
               Actividad reciente de tu agente
             </SectionTitle>
-            <Card padded={false} className="px-5">
-              <UsageFeed events={clientEvents.slice(0, 5)} />
+            <Card padded={false} className="px-4 sm:px-5">
+              {events.length > 0 ? (
+                <UsageFeed
+                  events={events.slice(0, 5)}
+                  businessById={businessById}
+                />
+              ) : (
+                <p className="py-6 text-sm text-[var(--color-subtle)]">
+                  Aún no hay actividad. Prueba el playground en /agente.
+                </p>
+              )}
             </Card>
           </div>
-        </>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          </div>
+        </TabPanel>
+      ) : merchantStats ? (
+        <TabPanel key="comercio" className="flex-1">
+          <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             <Stat
               value={merchantStats.queries_7d}
               label="Consultas agénticas (7d)"
@@ -214,11 +252,30 @@ export default function Dashboard() {
             <SectionTitle hint="Tu comercio, visto por los agentes">
               Consultas y compras recientes
             </SectionTitle>
-            <Card padded={false} className="px-5">
-              <UsageFeed events={merchantEvents} />
+            <Card padded={false} className="px-4 sm:px-5">
+              {merchantEvents.length > 0 ? (
+                <UsageFeed events={merchantEvents} businessById={businessById} />
+              ) : (
+                <p className="py-6 text-sm text-[var(--color-subtle)]">
+                  Sin eventos para tu comercio aún.
+                </p>
+              )}
             </Card>
           </div>
-        </>
+          </div>
+        </TabPanel>
+      ) : (
+        <TabPanel key="sin-comercio" className="flex-1">
+          <Card>
+            <p className="text-sm text-[var(--color-muted)]">
+              No tienes un comercio registrado. Ve a{" "}
+              <Link to="/comercio" className="underline">
+                /comercio
+              </Link>{" "}
+              para conectar tu tienda UCP.
+            </p>
+          </Card>
+        </TabPanel>
       )}
     </div>
   );

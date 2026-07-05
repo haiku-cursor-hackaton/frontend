@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -16,8 +17,235 @@ export function Card({
   return (
     <div
       className={cx(
-        "rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]",
-        padded && "p-5",
+        "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] transition-all duration-300 ease-out hover:shadow-[var(--shadow-pop)]",
+        padded && "p-4 sm:p-5",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+type TabItem<T extends string = string> = {
+  id: T;
+  label: string;
+  meta?: ReactNode;
+};
+
+export function Tabs<T extends string>({
+  tabs,
+  active,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  tabs: TabItem<T>[];
+  active: T;
+  onChange: (id: T) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cx(
+        "flex w-full max-w-full gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1 shadow-[var(--shadow-card)] sm:inline-flex sm:w-auto",
+        className,
+      )}
+    >
+      {tabs.map((tab) => {
+        const selected = active === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(tab.id)}
+            className={cx(
+              "relative inline-flex min-h-9 flex-1 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium outline-none transition-all duration-300 ease-out sm:flex-none",
+              "focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",
+              selected
+                ? "bg-[var(--color-fg)] text-[var(--color-surface)] shadow-[var(--shadow-card)]"
+                : "text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]",
+            )}
+          >
+            <span>{tab.label}</span>
+            {tab.meta != null ? (
+              <span
+                className={cx(
+                  "rounded-full px-1.5 py-0.5 text-[10px]",
+                  selected
+                    ? "bg-[color-mix(in_srgb,var(--color-surface)_18%,transparent)] text-[var(--color-surface)]"
+                    : "bg-[var(--color-surface-2)] text-[var(--color-subtle)]",
+                )}
+              >
+                {tab.meta}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  className,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  className?: string;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(Math.max(page, 1), pageCount);
+  const first = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const last = Math.min(currentPage * pageSize, total);
+
+  if (total <= pageSize) return null;
+
+  return (
+    <div
+      className={cx(
+        "flex flex-col gap-3 border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-muted)] sm:flex-row sm:items-center sm:justify-between",
+        className,
+      )}
+    >
+      <span>
+        {first}-{last} de {total}
+      </span>
+      <div className="flex items-center justify-between gap-2 sm:justify-end">
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 px-2.5"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          <span className="hidden sm:inline">Anterior</span>
+        </Button>
+        <span className="min-w-14 text-center">
+          {currentPage}/{pageCount}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          className="h-8 px-2.5"
+          disabled={currentPage >= pageCount}
+          onClick={() => onPageChange(currentPage + 1)}
+        >
+          <span className="hidden sm:inline">Siguiente</span>
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type MobileRecordField = {
+  label: string;
+  value: ReactNode;
+};
+
+type MobileRecord = {
+  id: string;
+  title: ReactNode;
+  eyebrow?: ReactNode;
+  meta?: ReactNode;
+  fields?: MobileRecordField[];
+  footer?: ReactNode;
+};
+
+export function MobileRecordList({
+  records,
+  empty,
+  className,
+}: {
+  records: MobileRecord[];
+  empty: ReactNode;
+  className?: string;
+}) {
+  if (records.length === 0) {
+    return (
+      <div
+        className={cx(
+          "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center text-sm text-[var(--color-subtle)]",
+          className,
+        )}
+      >
+        {empty}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cx("space-y-3", className)}>
+      {records.map((record) => (
+        <article
+          key={record.id}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {record.eyebrow ? (
+                <div className="mb-1 text-xs text-[var(--color-subtle)]">
+                  {record.eyebrow}
+                </div>
+              ) : null}
+              <div className="break-words text-sm font-medium text-[var(--color-fg)]">
+                {record.title}
+              </div>
+            </div>
+            {record.meta ? <div className="shrink-0">{record.meta}</div> : null}
+          </div>
+
+          {record.fields && record.fields.length > 0 ? (
+            <dl className="mt-3 grid grid-cols-1 gap-3 text-xs min-[420px]:grid-cols-2">
+              {record.fields.map((field) => (
+                <div key={field.label} className="min-w-0">
+                  <dt className="text-[var(--color-subtle)]">{field.label}</dt>
+                  <dd className="mt-0.5 break-words text-[var(--color-muted)]">
+                    {field.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+
+          {record.footer ? (
+            <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+              {record.footer}
+            </div>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+export function TabPanel({
+  children,
+  className,
+  scroll = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  scroll?: boolean;
+}) {
+  return (
+    <div
+      className={cx(
+        "min-h-0 animate-panel-in",
+        scroll && "overflow-auto pr-1",
         className,
       )}
     >
@@ -34,7 +262,7 @@ export function SectionTitle({
   hint?: ReactNode;
 }) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="mb-3 flex flex-col items-start justify-between gap-1.5 sm:flex-row sm:items-center sm:gap-3">
       <h2 className="text-sm font-semibold tracking-wide text-[var(--color-fg)]">
         {children}
       </h2>
@@ -113,10 +341,10 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]";
+    "inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]";
   const variants: Record<string, string> = {
     primary:
-      "bg-[var(--color-brand-strong)] text-white shadow-[var(--shadow-card)] hover:bg-[var(--color-brand)]",
+      "bg-[var(--color-brand-strong)] text-[var(--color-on-brand)] shadow-[var(--shadow-card)] hover:bg-[var(--color-brand)]",
     secondary:
       "border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-[var(--color-fg)] hover:bg-[var(--color-surface-2)]",
     ghost:
@@ -181,7 +409,7 @@ export function Toggle({
     >
       <span
         className={cx(
-          "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
+          "absolute top-0.5 h-4 w-4 rounded-full bg-[var(--color-surface)] shadow-[var(--shadow-card)] transition-transform",
           checked ? "translate-x-4" : "translate-x-0.5",
         )}
       />

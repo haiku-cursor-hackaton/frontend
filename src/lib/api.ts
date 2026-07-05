@@ -154,6 +154,28 @@ export async function linkMerchantUrl(
   return res.json();
 }
 
+export interface UnlinkMerchantResponse {
+  business_id: string;
+  status: "pending";
+}
+
+export async function unlinkMerchantUrl(
+  businessId: string,
+): Promise<UnlinkMerchantResponse> {
+  const res = await apiFetch(
+    `/v1/merchants/${encodeURIComponent(businessId)}/unlink`,
+    {
+      method: "POST",
+      headers: await authHeaders(),
+      body: JSON.stringify({}),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res));
+  }
+  return res.json();
+}
+
 export function isApiConfigured(): boolean {
   return Boolean(API_BASE);
 }

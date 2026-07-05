@@ -5,6 +5,8 @@ import { useAuth } from "@/auth/AuthContext";
 import {
   computeMerchantStats,
   useBusinessMap,
+  useBusinessOrders,
+  useBusinessWallet,
   useMyBusinesses,
   useProfile,
   useUsageEvents,
@@ -13,7 +15,7 @@ import {
 import { WELCOME_BONUS_MINOR, OPERATION_LABEL } from "@/lib/constants";
 import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
 import { formatUserDisplayName } from "@/lib/user";
-import type { AccountType, UsageEvent } from "@/types/ucp";
+import type { AccountType, OrderRecord, UsageEvent } from "@/types/ucp";
 
 const STATUS_TONE: Record<UsageEvent["status"], "accent" | "warn" | "danger"> = {
   ok: "accent",
@@ -71,6 +73,75 @@ function UsageFeed({
   );
 }
 
+function MerchantOrdersFeed({ orders }: { orders: OrderRecord[] }) {
+  if (orders.length === 0) {
+    return (
+      <p className="py-6 text-sm text-[var(--color-subtle)]">
+        Aun no hay ventas registradas.
+      </p>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-[var(--color-border)]">
+      {orders.slice(0, 10).map((order) => (
+        <div
+          key={order.id}
+          className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">
+              {order.external_order_id || order.id.slice(0, 8)}
+            </div>
+            <div className="text-xs text-[var(--color-subtle)]">
+              {formatDateTime(order.created_at)} - {order.status}
+            </div>
+          </div>
+          <div className="text-sm font-medium text-[var(--color-accent)]">
+            +{formatMoney(order.total_minor, order.currency)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MerchantActivityFeed({ events }: { events: UsageEvent[] }) {
+  const meaningful = events.filter((e) =>
+    ["create_checkout", "complete_checkout", "get_order"].includes(e.operation),
+  );
+
+  if (meaningful.length === 0) {
+    return (
+      <p className="py-4 text-sm text-[var(--color-subtle)]">
+        Sin actividad de checkout reciente.
+      </p>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-[var(--color-border)]">
+      {meaningful.slice(0, 8).map((e) => (
+        <div
+          key={e.id}
+          className="flex flex-col gap-1 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="min-w-0 text-sm">
+            {OPERATION_LABEL[e.operation]}
+            <span className="text-[var(--color-subtle)]">
+              {" "}
+              - {formatDateTime(e.occurred_at)}
+            </span>
+          </div>
+          <Badge tone={e.status === "error" ? "danger" : "neutral"}>
+            {e.status}
+          </Badge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function purchasesCount(events: UsageEvent[]): number {
   return events.filter((e) => e.is_purchase).length;
 }
@@ -109,12 +180,17 @@ export default function Dashboard() {
   );
 
   const merchantBusinessId = myBusinesses[0]?.id;
+  const { data: merchantOrders = [] } = useBusinessOrders(merchantBusinessId);
+  const { data: merchantWallet } = useBusinessWallet(merchantBusinessId);
   const merchantStats = useMemo(
     () =>
       merchantBusinessId
-        ? computeMerchantStats(events, merchantBusinessId)
+        ? computeMerchantStats(events, merchantBusinessId, {
+            orders: merchantOrders,
+            wallet: merchantWallet,
+          })
         : null,
-    [events, merchantBusinessId],
+    [events, merchantBusinessId, merchantOrders, merchantWallet],
   );
   const merchantEvents = useMemo(
     () =>
@@ -153,43 +229,46 @@ export default function Dashboard() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
               <Stat
-                value={merchantStats.queries_7d}
-                label="Consultas agenticas (7d)"
-                tone="brand"
-              />
-              <Stat
-                value={merchantStats.purchases_generated}
-                label="Compras generadas"
+                value={formatMoney(
+                  merchantStats.credited_balance_minor,
+                  merchantStats.currency,
+                )}
+                label="Saldo acreditado"
                 tone="accent"
               />
               <Stat
-                value={`${(merchantStats.conversion_rate * 100).toFixed(1)}%`}
-                label="Conversion agentica"
+                value={merchantStats.purchases_generated}
+                label={`Ventas (7d) / ${merchantStats.sales_all_time} total`}
+                tone="brand"
               />
               <Stat
                 value={formatMoney(
                   merchantStats.revenue_7d_minor,
                   merchantStats.currency,
                 )}
-                label="Revenue simulado (7d)"
-                tone="accent"
+                label={`Ingresos 7d (${formatMoney(merchantStats.avg_order_minor_7d, merchantStats.currency)} prom.)`}
+              />
+              <Stat
+                value={`${(merchantStats.conversion_rate * 100).toFixed(0)}%`}
+                label={`Checkout a compra (${merchantStats.checkouts_started_7d} iniciados)`}
               />
             </div>
 
-            <div>
-              <SectionTitle>Consultas y compras recientes</SectionTitle>
-              <Card padded={false} className="px-4 sm:px-5">
-                {merchantEvents.length > 0 ? (
-                  <UsageFeed
-                    events={merchantEvents}
-                    businessById={businessById}
-                  />
-                ) : (
-                  <p className="py-6 text-sm text-[var(--color-subtle)]">
-                    Sin eventos para tu comercio aun.
-                  </p>
-                )}
-              </Card>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <SectionTitle>Ventas recientes</SectionTitle>
+                <Card padded={false} className="px-4 sm:px-5">
+                  <MerchantOrdersFeed orders={merchantOrders} />
+                </Card>
+              </div>
+              <div>
+                <SectionTitle>
+                  Actividad MCP ({merchantStats.queries_7d} consultas en 7d)
+                </SectionTitle>
+                <Card padded={false} className="px-4 sm:px-5">
+                  <MerchantActivityFeed events={merchantEvents} />
+                </Card>
+              </div>
             </div>
           </div>
         ) : (

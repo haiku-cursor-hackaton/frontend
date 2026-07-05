@@ -288,12 +288,17 @@ export interface UsageEvent {
   occurred_at: string;
 }
 
-/** Vista agregada usada por el panel de comercio. Se calcula desde usage_events. */
+/** Vista agregada usada por el panel de comercio. */
 export interface MerchantStats {
   queries_7d: number;
+  checkouts_started_7d: number;
   purchases_generated: number;
+  sales_all_time: number;
   conversion_rate: number;
   revenue_7d_minor: number;
+  revenue_all_time_minor: number;
+  avg_order_minor_7d: number;
+  credited_balance_minor: number;
   currency: CurrencyCode;
   byDay: { day: string; queries: number; purchases: number }[];
 }

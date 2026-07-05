@@ -19,8 +19,12 @@ import {
   getStoredSdkInstallPrompt,
   getStoredSdkKey,
   useApiKeys,
+  useBusinessOrders,
+  useBusinessWallet,
+  useLinkMerchant,
   useMerchantDomains,
   useMyBusinesses,
+  useUnlinkMerchant,
   useUsageEvents,
 } from "@/hooks/useData";
 import {
@@ -28,8 +32,8 @@ import {
   displaySdkInstallPrompt,
   maskSecret,
 } from "@/lib/sdk-config";
-import { formatMoney } from "@/lib/money";
-import type { MerchantStats, UCPCapability } from "@/types/ucp";
+import { formatDateTime, formatMoney } from "@/lib/money";
+import type { MerchantStats, OrderRecord, UCPCapability } from "@/types/ucp";
 
 type ComercioTab = "integracion" | "metricas";
 
@@ -39,6 +43,36 @@ const CAPABILITY_LABEL: Partial<Record<UCPCapability, string>> = {
   "dev.ucp.shopping.checkout": "checkout",
   "dev.ucp.shopping.order": "order",
 };
+
+function RecentOrdersList({ orders }: { orders: OrderRecord[] }) {
+  if (orders.length === 0) {
+    return (
+      <p className="text-sm text-[var(--color-muted)]">Sin ventas todavia.</p>
+    );
+  }
+  return (
+    <div className="divide-y divide-[var(--color-border)]">
+      {orders.slice(0, 8).map((order) => (
+        <div
+          key={order.id}
+          className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="text-sm font-medium">
+              {order.external_order_id || order.id.slice(0, 8)}
+            </div>
+            <div className="text-xs text-[var(--color-subtle)]">
+              {formatDateTime(order.created_at)}
+            </div>
+          </div>
+          <div className="text-sm font-medium">
+            {formatMoney(order.total_minor, order.currency)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function StatsChart({ stats }: { stats: MerchantStats }) {
   const max = Math.max(...stats.byDay.map((d) => d.queries), 1);
@@ -110,6 +144,8 @@ export default function Comercio() {
   const [revealSecrets, setRevealSecrets] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [storeUrl, setStoreUrl] = useState("");
+  const [linkError, setLinkError] = useState<string | null>(null);
   const { data: myBusinesses = [], isLoading } = useMyBusinesses();
   const business = myBusinesses[0];
   const businessIds = useMemo(() => (business ? [business.id] : []), [business]);
@@ -122,6 +158,10 @@ export default function Comercio() {
     businessIds,
     enabled: businessIds.length > 0,
   });
+  const { data: businessOrders = [] } = useBusinessOrders(business?.id);
+  const { data: businessWallet } = useBusinessWallet(business?.id);
+  const linkMerchant = useLinkMerchant(business?.id);
+  const unlinkMerchant = useUnlinkMerchant(business?.id);
 
   const sdkKey = useMemo(
     () =>
@@ -155,18 +195,60 @@ export default function Comercio() {
 
   const merchantStats = useMemo(
     () =>
-      business ? computeMerchantStats(usageEvents, business.id) : null,
-    [usageEvents, business],
+      business
+        ? computeMerchantStats(usageEvents, business.id, {
+            orders: businessOrders,
+            wallet: businessWallet,
+          })
+        : null,
+    [usageEvents, business, businessOrders, businessWallet],
   );
 
-  const errorRate = useMemo(() => {
-    if (!business) return 0;
-    const mine = usageEvents.filter((e) => e.business_id === business.id);
-    if (mine.length === 0) return 0;
-    return mine.filter((e) => e.status === "error").length / mine.length;
-  }, [usageEvents, business]);
+  const isLinked = Boolean(business?.well_known_url);
+  const linkedDomain = useMemo(() => {
+    const verified = domains.find((d) => d.verified) ?? domains[0];
+    if (verified) return verified.domain;
+    if (business?.well_known_url) {
+      try {
+        return new URL(business.well_known_url).host;
+      } catch {
+        return business.well_known_url;
+      }
+    }
+    return null;
+  }, [domains, business?.well_known_url]);
 
-  const isPending = business ? business.status !== "active" : true;
+  async function handleLink(e: React.FormEvent) {
+    e.preventDefault();
+    setLinkError(null);
+    const rootUrl = storeUrl.trim();
+    if (!rootUrl) {
+      setLinkError("Ingresa la URL de tu tienda.");
+      return;
+    }
+    try {
+      await linkMerchant.mutateAsync({ root_url: rootUrl });
+      setStoreUrl("");
+    } catch (err) {
+      setLinkError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo vincular la tienda. Verifica que exponga UCP.",
+      );
+    }
+  }
+
+  async function handleUnlink() {
+    setLinkError(null);
+    try {
+      await unlinkMerchant.mutateAsync();
+      setStoreUrl("");
+    } catch (err) {
+      setLinkError(
+        err instanceof Error ? err.message : "No se pudo desvincular la tienda.",
+      );
+    }
+  }
 
   async function copyText(text: string, which: "key" | "prompt") {
     try {
@@ -191,12 +273,12 @@ export default function Comercio() {
     );
   }
 
-  if (!business || isPending) {
+  if (!business) {
     return (
       <Page>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="shrink-0 text-lg font-semibold">
-            {business ? business.name : "Panel de comercio"}
+            Panel de comercio
           </h1>
           {sdkKeyPlaintext || sdkInstallPrompt ? (
             <EyeToggle
@@ -284,54 +366,111 @@ export default function Comercio() {
           <div className="space-y-4">
             <div className="grid gap-4 lg:grid-cols-2">
               <div>
-                <SectionTitle>Perfil UCP</SectionTitle>
+                <SectionTitle
+                  hint={isLinked ? "1 de 1 vinculado" : "sin vincular"}
+                >
+                  URL de tienda
+                </SectionTitle>
                 <Card>
-                  <div className="space-y-4">
-                    <Field label="well_known_url">
-                      <Input readOnly value={business.well_known_url} />
-                    </Field>
-                    <Field label="ucp_base_url (REST)">
-                      <Input readOnly value={business.ucp_base_url} />
-                    </Field>
-                    <div>
-                      <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
-                        Capabilities detectadas
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {business.ucp_capabilities.map((c) => (
-                          <Badge key={c} tone="brand">
-                            {CAPABILITY_LABEL[c] ?? c}
-                          </Badge>
-                        ))}
+                  {isLinked ? (
+                    <div className="space-y-4">
+                      <div className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <code className="block truncate text-sm text-[var(--color-fg)]">
+                            {linkedDomain}
+                          </code>
+                          {business.well_known_url ? (
+                            <span className="block truncate text-xs text-[var(--color-subtle)]">
+                              {business.well_known_url}
+                            </span>
+                          ) : null}
+                        </div>
+                        <Badge tone="accent">verificado</Badge>
+                      </div>
+                      <p className="text-xs text-[var(--color-muted)]">
+                        UCP detectado y vinculado. Solo puedes tener un dominio;
+                        para cambiarlo, desvincula y vuelve a vincular.
+                      </p>
+                      <div className="flex justify-end">
+                        <Button
+                          variant="secondary"
+                          onClick={handleUnlink}
+                          disabled={unlinkMerchant.isPending}
+                        >
+                          {unlinkMerchant.isPending
+                            ? "Desvinculando…"
+                            : "Desvincular"}
+                        </Button>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <form onSubmit={handleLink} className="space-y-4">
+                      <Field label="URL de tu tienda">
+                        <Input
+                          value={storeUrl}
+                          onChange={(e) => setStoreUrl(e.target.value)}
+                          placeholder="https://mitienda.com"
+                          inputMode="url"
+                          autoComplete="url"
+                          disabled={linkMerchant.isPending}
+                        />
+                      </Field>
+                      <p className="text-xs text-[var(--color-muted)]">
+                        Tu dominio debe exponer UCP en{" "}
+                        <code>/.well-known/ucp</code>. Verificaremos la capacidad
+                        antes de vincular.
+                      </p>
+                      <div className="flex justify-end">
+                        <Button
+                          type="submit"
+                          variant="primary"
+                          disabled={linkMerchant.isPending}
+                        >
+                          {linkMerchant.isPending
+                            ? "Verificando UCP…"
+                            : "Vincular tienda"}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                  {linkError ? (
+                    <p className="mt-3 rounded-lg bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                      {linkError}
+                    </p>
+                  ) : null}
                 </Card>
               </div>
 
               <div>
-                <SectionTitle>Dominios verificados</SectionTitle>
+                <SectionTitle>Perfil UCP</SectionTitle>
                 <Card>
-                  <div className="space-y-2">
-                    {domains.map((d) => (
-                      <div
-                        key={d.id}
-                        className="flex flex-col items-start gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <code className="text-[var(--color-fg)]">{d.domain}</code>
-                        {d.verified ? (
-                          <Badge tone="accent">verificado</Badge>
-                        ) : (
-                          <Badge tone="warn">pendiente</Badge>
-                        )}
+                  {isLinked ? (
+                    <div className="space-y-4">
+                      <Field label="well_known_url">
+                        <Input readOnly value={business.well_known_url} />
+                      </Field>
+                      <Field label="ucp_base_url (REST)">
+                        <Input readOnly value={business.ucp_base_url} />
+                      </Field>
+                      <div>
+                        <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                          Capabilities detectadas
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {business.ucp_capabilities.map((c) => (
+                            <Badge key={c} tone="brand">
+                              {CAPABILITY_LABEL[c] ?? c}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                    {domains.length === 0 ? (
-                      <p className="text-sm text-[var(--color-subtle)]">
-                        Sin dominios registrados.
-                      </p>
-                    ) : null}
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-[var(--color-subtle)]">
+                      Vincula la URL de tu tienda para detectar automáticamente
+                      su perfil UCP y capabilities.
+                    </p>
+                  )}
                 </Card>
               </div>
             </div>
@@ -404,27 +543,28 @@ export default function Comercio() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
                 <Stat
-                  value={merchantStats.queries_7d}
-                  label="Consultas MCP"
-                  tone="brand"
+                  value={formatMoney(
+                    merchantStats.credited_balance_minor,
+                    merchantStats.currency,
+                  )}
+                  label="Saldo acreditado"
+                  tone="accent"
                 />
                 <Stat
                   value={merchantStats.purchases_generated}
-                  label="Compras generadas"
-                  tone="accent"
+                  label={`Ventas 7d (${merchantStats.sales_all_time} total)`}
+                  tone="brand"
                 />
                 <Stat
                   value={formatMoney(
                     merchantStats.revenue_7d_minor,
                     merchantStats.currency,
                   )}
-                  label="Revenue simulado"
-                  tone="accent"
+                  label={`Ingresos 7d (${formatMoney(merchantStats.avg_order_minor_7d, merchantStats.currency)} prom.)`}
                 />
                 <Stat
-                  value={`${(errorRate * 100).toFixed(1)}%`}
-                  label="Errores"
-                  tone={errorRate > 0.05 ? "danger" : "neutral"}
+                  value={`${(merchantStats.conversion_rate * 100).toFixed(0)}%`}
+                  label={`Checkout a compra (${merchantStats.checkouts_started_7d})`}
                 />
               </div>
 
@@ -432,6 +572,20 @@ export default function Comercio() {
                 <SectionTitle>Consultas vs. compras</SectionTitle>
                 <Card>
                   <StatsChart stats={merchantStats} />
+                </Card>
+              </div>
+
+              <div>
+                <SectionTitle>
+                  Ventas recientes ({merchantStats.sales_all_time} total -{" "}
+                  {formatMoney(
+                    merchantStats.revenue_all_time_minor,
+                    merchantStats.currency,
+                  )}{" "}
+                  acreditados)
+                </SectionTitle>
+                <Card>
+                  <RecentOrdersList orders={businessOrders} />
                 </Card>
               </div>
             </div>

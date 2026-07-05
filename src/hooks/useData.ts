@@ -9,11 +9,13 @@ import {
   connectMerchant,
   linkMerchantUrl,
   registerMerchant,
+  unlinkMerchantUrl,
 } from "@/lib/api";
 import type {
   ConnectMerchantResponse,
   LinkMerchantResponse,
   RegisterMerchantResponse,
+  UnlinkMerchantResponse,
 } from "@/lib/api";
 import { MCP_KEY_STORAGE, SDK_INSTALL_PROMPT_STORAGE, SDK_KEY_STORAGE } from "@/lib/constants";
 import { buildSdkInstallPrompt } from "@/lib/sdk-config";
@@ -22,17 +24,20 @@ import {
   mapBusiness,
   mapCheckoutSession,
   mapMerchantDomain,
+  mapOrder,
   mapPayment,
   mapProfile,
   mapUsageEvent,
   mapWallet,
 } from "@/lib/mappers";
 import { getSupabase } from "@/lib/supabase";
-import type { ApiKey, MerchantStats, UsageEvent } from "@/types/ucp";
+import type { ApiKey, MerchantStats, OrderRecord, UsageEvent, Wallet } from "@/types/ucp";
 
 export const queryKeys = {
   profile: (id: string) => ["profile", id] as const,
   wallet: (id: string) => ["wallet", id] as const,
+  businessWallet: (businessId: string) => ["businessWallet", businessId] as const,
+  businessOrders: (businessId: string) => ["businessOrders", businessId] as const,
   payments: (walletId: string) => ["payments", walletId] as const,
   usageEvents: (scope: string) => ["usageEvents", scope] as const,
   businesses: () => ["businesses"] as const,
@@ -75,6 +80,41 @@ export function useWallet() {
         .maybeSingle();
       if (error) throw error;
       return data ? mapWallet(data) : null;
+    },
+  });
+}
+
+export function useBusinessWallet(businessId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.businessWallet(businessId ?? ""),
+    enabled: Boolean(businessId),
+    queryFn: async () => {
+      const sb = getSupabase();
+      const { data, error } = await sb
+        .from("wallets")
+        .select("*")
+        .eq("business_id", businessId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data ? mapWallet(data) : null;
+    },
+  });
+}
+
+export function useBusinessOrders(businessId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.businessOrders(businessId ?? ""),
+    enabled: Boolean(businessId),
+    queryFn: async () => {
+      const sb = getSupabase();
+      const { data, error } = await sb
+        .from("orders")
+        .select("*")
+        .eq("business_id", businessId!)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []).map(mapOrder);
     },
   });
 }
@@ -242,46 +282,90 @@ export function useBusinessMap() {
   return { businesses: all, businessById: (id: string) => byId.get(id) };
 }
 
+const PAID_ORDER_STATUSES = new Set([
+  "paid",
+  "processing",
+  "shipped",
+  "delivered",
+]);
+
+function withinLast7Days(iso: string): boolean {
+  return Date.now() - new Date(iso).getTime() <= 7 * 24 * 60 * 60 * 1000;
+}
+
+function dayKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("es", { weekday: "short" });
+}
+
 export function computeMerchantStats(
   events: UsageEvent[],
   businessId: string,
+  options?: { orders?: OrderRecord[]; wallet?: Wallet | null },
 ): MerchantStats {
   const now = Date.now();
-  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
   const mine = events.filter((e) => e.business_id === businessId);
-  const recent = mine.filter(
-    (e) => new Date(e.occurred_at).getTime() >= sevenDaysAgo,
+  const recentEvents = mine.filter((e) => withinLast7Days(e.occurred_at));
+  const businessOrders = (options?.orders ?? []).filter(
+    (order) => order.business_id === businessId,
+  );
+  const paidOrders = businessOrders.filter((order) =>
+    PAID_ORDER_STATUSES.has(order.status),
+  );
+  const recentOrders = paidOrders.filter((order) =>
+    withinLast7Days(order.created_at),
   );
 
-  const queries = recent.filter((e) => !e.is_purchase).length;
-  const purchases = recent.filter((e) => e.is_purchase).length;
-  const revenue = recent
-    .filter((e) => e.is_purchase && e.revenue_minor)
-    .reduce((s, e) => s + (e.revenue_minor ?? 0), 0);
+  const queries = recentEvents.filter(
+    (event) => event.operation !== "complete_checkout" && !event.is_purchase,
+  ).length;
+  const purchases = recentOrders.length;
+  const revenue = recentOrders.reduce(
+    (sum, order) => sum + order.total_minor,
+    0,
+  );
+  const revenueAllTime = paidOrders.reduce(
+    (sum, order) => sum + order.total_minor,
+    0,
+  );
+  const checkoutsStarted = recentEvents.filter(
+    (event) => event.operation === "create_checkout",
+  ).length;
+  const conversion_rate =
+    checkoutsStarted > 0
+      ? purchases / checkoutsStarted
+      : queries > 0
+        ? purchases / queries
+        : 0;
+  const avg_order_minor_7d =
+    purchases > 0 ? Math.round(revenue / purchases) : 0;
 
   const byDayMap = new Map<string, { queries: number; purchases: number }>();
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now - i * 24 * 60 * 60 * 1000);
-    const key = d.toLocaleDateString("es", { weekday: "short" });
-    byDayMap.set(key, { queries: 0, purchases: 0 });
+    byDayMap.set(dayKey(d.toISOString()), { queries: 0, purchases: 0 });
   }
-  for (const e of recent) {
-    const key = new Date(e.occurred_at).toLocaleDateString("es", {
-      weekday: "short",
-    });
-    const entry = byDayMap.get(key);
-    if (!entry) continue;
-    if (e.is_purchase) entry.purchases++;
-    else entry.queries++;
+  for (const event of recentEvents) {
+    if (event.operation === "complete_checkout" || event.is_purchase) continue;
+    const entry = byDayMap.get(dayKey(event.occurred_at));
+    if (entry) entry.queries++;
+  }
+  for (const order of recentOrders) {
+    const entry = byDayMap.get(dayKey(order.created_at));
+    if (entry) entry.purchases++;
   }
 
   return {
     queries_7d: queries,
+    checkouts_started_7d: checkoutsStarted,
     purchases_generated: purchases,
-    conversion_rate: queries > 0 ? purchases / queries : 0,
+    sales_all_time: paidOrders.length,
+    conversion_rate,
     revenue_7d_minor: revenue,
-    currency: "USD",
-    byDay: [...byDayMap.entries()].map(([day, v]) => ({ day, ...v })),
+    revenue_all_time_minor: revenueAllTime,
+    avg_order_minor_7d,
+    credited_balance_minor: options?.wallet?.available_minor ?? 0,
+    currency: options?.wallet?.currency ?? recentOrders[0]?.currency ?? "USD",
+    byDay: [...byDayMap.entries()].map(([day, value]) => ({ day, ...value })),
   };
 }
 
@@ -453,6 +537,25 @@ export function useLinkMerchant(businessId: string | undefined) {
       qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.businesses() });
       qc.invalidateQueries({ queryKey: queryKeys.domains(result.business_id) });
+    },
+  });
+}
+
+export function useUnlinkMerchant(businessId: string | undefined) {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (): Promise<UnlinkMerchantResponse> => {
+      if (!businessId) throw new Error("Falta business_id para desvincular URL");
+      return unlinkMerchantUrl(businessId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.businesses() });
+      if (businessId) {
+        qc.invalidateQueries({ queryKey: queryKeys.domains(businessId) });
+      }
     },
   });
 }

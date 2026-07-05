@@ -120,6 +120,34 @@ body {
   animation: panel-in 220ms ease-out;
 }
 
+.genko-logo {
+  line-height: 0;
+}
+
+.genko-logo--auto .genko-logo__dark {
+  display: none;
+}
+
+.genko-logo--inverse .genko-logo__light {
+  display: none;
+}
+
+:root[data-theme="dark"] .genko-logo--auto .genko-logo__light {
+  display: none;
+}
+
+:root[data-theme="dark"] .genko-logo--auto .genko-logo__dark {
+  display: block;
+}
+
+:root[data-theme="dark"] .genko-logo--inverse .genko-logo__light {
+  display: block;
+}
+
+:root[data-theme="dark"] .genko-logo--inverse .genko-logo__dark {
+  display: none;
+}
+
 select,
 select option {
   font-family: inherit;

@@ -5,6 +5,7 @@ import { useBootstrapAccount, useBootstrapMerchant } from "@/hooks/useData";
 import { WELCOME_BONUS_MINOR } from "@/lib/constants";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { Button, Field, Input, Textarea } from "@/components/ui";
+import BrandLogo from "@/components/BrandLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import { formatMoney } from "@/lib/money";
 import type { AccountType } from "@/types/ucp";
@@ -82,12 +83,7 @@ export default function Login() {
     <div className="relative grid min-h-screen lg:grid-cols-2">
       <ThemeToggle className="absolute right-4 top-4 z-10" />
       <div className="hidden flex-col justify-between bg-[var(--color-brand-strong)] p-10 text-[var(--color-on-brand)] lg:flex">
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[color-mix(in_srgb,var(--color-on-brand)_16%,transparent)] text-sm font-bold">
-            g
-          </span>
-          <span className="text-lg font-semibold">genko</span>
-        </div>
+        <BrandLogo variant="inverse" className="h-[34px]" />
 
         <div className="space-y-3">
           <h2 className="text-3xl font-semibold leading-tight">
@@ -110,12 +106,7 @@ export default function Login() {
       <div className="flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-[360px]">
           <div className="mb-8 lg:hidden">
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--color-brand-strong)] text-sm font-bold text-[var(--color-on-brand)]">
-                g
-              </span>
-              <span className="text-lg font-semibold">genko</span>
-            </div>
+            <BrandLogo className="h-[34px]" />
           </div>
 
           <div className="mb-6">

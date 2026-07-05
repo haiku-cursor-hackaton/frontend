@@ -52,9 +52,19 @@ function buildClaudeDesktopConfig(mcpUrl: string) {
   };
 }
 
-function buildEnvVars(apiKey: string) {
+function buildEnvVars(apiKey: string, keyPrefix?: string, reveal = false) {
+  let value: string;
+  if (apiKey) {
+    value = reveal ? apiKey : maskApiKey(apiKey);
+  } else if (keyPrefix) {
+    value = reveal
+      ? "<key no disponible en este navegador>"
+      : `${keyPrefix}${"•".repeat(28)}`;
+  } else {
+    value = reveal ? "<key no disponible en este navegador>" : maskApiKey("");
+  }
   return {
-    [MCP_API_KEY_ENV_VAR]: apiKeyPlaceholder(apiKey),
+    [MCP_API_KEY_ENV_VAR]: value,
   };
 }
 
@@ -62,6 +72,41 @@ function buildCodexToml(mcpUrl: string): string {
   return [
     `[mcp_servers.${MCP_SERVER_NAME}]`,
     `url = "${mcpUrl}"`,
+    `bearer_token_env_var = "${MCP_API_KEY_ENV_VAR}"`,
+  ].join("\n");
+}
+
+function buildCodexEnvInstructions(
+  apiKey: string,
+  keyPrefix?: string,
+  reveal = false,
+): string {
+  let key: string;
+  if (apiKey) {
+    key = reveal ? apiKey : maskApiKey(apiKey);
+  } else if (keyPrefix) {
+    key = reveal
+      ? "<key no disponible en este navegador>"
+      : `${keyPrefix}${"•".repeat(28)}`;
+  } else {
+    key = reveal ? "<key no disponible en este navegador>" : maskApiKey("");
+  }
+  return [
+    "# Codex (HTTP): NO uses [mcp_servers.genko.env] en config.toml.",
+    "# bearer_token_env_var lee la API key del entorno del sistema operativo.",
+    "",
+    "# Windows — variable de usuario (recomendado):",
+    "# Panel de control → Variables de entorno → Nueva (usuario)",
+    `# Nombre: ${MCP_API_KEY_ENV_VAR}`,
+    `# Valor: ${key}`,
+    "",
+    "# PowerShell — solo esta sesión (ejecutar antes de abrir Codex):",
+    `$env:${MCP_API_KEY_ENV_VAR} = "${key}"`,
+    "",
+    "# macOS / Linux:",
+    `# export ${MCP_API_KEY_ENV_VAR}="${key}"`,
+    "",
+    "# Cierra y vuelve a abrir Codex después de definir la variable.",
   ].join("\n");
 }
 
@@ -69,6 +114,8 @@ export function buildAgentConfigBlocks(
   agent: McpAgent,
   apiKey: string,
   mcpUrl: string = getMcpGatewayUrl(),
+  keyPrefix?: string,
+  reveal = false,
 ): McpConfigBlock[] {
   switch (agent) {
     case "cursor":
@@ -80,7 +127,7 @@ export function buildAgentConfigBlocks(
         },
         {
           title: "Entorno",
-          value: JSON.stringify(buildEnvVars(apiKey), null, 2),
+          value: JSON.stringify(buildEnvVars(apiKey, keyPrefix, reveal), null, 2),
         },
       ];
     case "claude-desktop":
@@ -91,15 +138,15 @@ export function buildAgentConfigBlocks(
         },
         {
           title: "Entorno",
-          value: JSON.stringify(buildEnvVars(apiKey), null, 2),
+          value: JSON.stringify(buildEnvVars(apiKey, keyPrefix, reveal), null, 2),
         },
       ];
     case "codex":
       return [
         { title: "config.toml", value: buildCodexToml(mcpUrl) },
         {
-          title: "Entorno",
-          value: JSON.stringify(buildEnvVars(apiKey), null, 2),
+          title: "Entorno (sistema operativo)",
+          value: buildCodexEnvInstructions(apiKey, keyPrefix, reveal),
         },
       ];
     default:
@@ -114,12 +161,20 @@ export function buildAgentConfigDocument(
   apiKey: string,
   revealSecrets: boolean,
   mcpUrl: string = getMcpGatewayUrl(),
+  keyPrefix?: string,
 ): string {
-  const keyForBuild = revealSecrets ? apiKey : maskApiKey(apiKey);
-  const blocks = buildAgentConfigBlocks(agent, keyForBuild, mcpUrl);
+  const blocks = buildAgentConfigBlocks(
+    agent,
+    apiKey,
+    mcpUrl,
+    keyPrefix,
+    revealSecrets,
+  );
   if (blocks.length === 0) return "";
   if (blocks.length === 1) return blocks[0].value;
-  return blocks.map((block) => block.value).join("\n\n");
+  return blocks
+    .map((block) => `# ${block.title}\n${block.value}`)
+    .join("\n\n");
 }
 
 // Compat helpers used elsewhere

@@ -1,7 +1,11 @@
 import { getSupabase } from "@/lib/supabase";
+import { OFFICIAL_PLATFORM_API_URL } from "@/lib/constants";
 
 const API_BASE = (
-  import.meta.env.VITE_UCP_API_URL ?? "http://127.0.0.1:8000"
+  import.meta.env.VITE_UCP_API_URL ??
+    (import.meta.env.DEV
+      ? "http://127.0.0.1:8000"
+      : OFFICIAL_PLATFORM_API_URL)
 ).replace(/\/$/, "");
 
 async function readApiError(res: Response): Promise<string> {

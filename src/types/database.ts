@@ -158,6 +158,7 @@ export type Database = {
       wallets: {
         Row: {
           available_minor: number;
+          business_id: string | null;
           created_at: string;
           currency: string;
           id: string;

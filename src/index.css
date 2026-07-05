@@ -124,6 +124,10 @@ body {
   line-height: 0;
 }
 
+.genko-logo img {
+  max-height: 100%;
+}
+
 .genko-logo--auto .genko-logo__dark {
   display: none;
 }

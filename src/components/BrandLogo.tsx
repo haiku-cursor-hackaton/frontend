@@ -9,18 +9,20 @@ type BrandLogoProps = {
   variant?: BrandLogoVariant;
 };
 
+const DEFAULT_SIZE = "h-[26px]";
+
 export default function BrandLogo({
-  className,
+  className = DEFAULT_SIZE,
   variant = "auto",
 }: BrandLogoProps) {
   if (variant === "light" || variant === "dark") {
     return (
       <img
         src={variant === "dark" ? logoDark : logoLight}
-        width="154"
-        height="49"
+        width={154}
+        height={49}
         alt="Genko"
-        className={cx("block h-auto w-auto shrink-0", className)}
+        className={cx("block w-auto max-w-none shrink-0 object-contain", className)}
       />
     );
   }
@@ -28,7 +30,7 @@ export default function BrandLogo({
   return (
     <span
       className={cx(
-        "genko-logo inline-grid shrink-0",
+        "genko-logo relative inline-block shrink-0 overflow-hidden leading-none",
         variant === "inverse" ? "genko-logo--inverse" : "genko-logo--auto",
         className,
       )}
@@ -37,17 +39,19 @@ export default function BrandLogo({
     >
       <img
         src={logoLight}
-        width="154"
-        height="49"
+        width={154}
+        height={49}
         alt=""
-        className="genko-logo__light h-full w-auto"
+        aria-hidden
+        className="genko-logo__light block h-full w-auto max-w-none object-contain object-left"
       />
       <img
         src={logoDark}
-        width="154"
-        height="49"
+        width={154}
+        height={49}
         alt=""
-        className="genko-logo__dark h-full w-auto"
+        aria-hidden
+        className="genko-logo__dark absolute inset-y-0 left-0 block h-full w-auto max-w-none object-contain object-left"
       />
     </span>
   );

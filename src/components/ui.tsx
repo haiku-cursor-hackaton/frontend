@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
@@ -18,12 +18,45 @@ export function Card({
     <div
       className={cx(
         "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] transition-all duration-300 ease-out hover:shadow-[var(--shadow-pop)]",
-        padded && "p-4 sm:p-5",
+        padded && "p-3 sm:p-4 md:p-5",
         className,
       )}
     >
       {children}
     </div>
+  );
+}
+
+export function Page({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cx("flex min-h-0 flex-col gap-4 pb-[max(1rem,env(safe-area-inset-bottom))]", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function CodePre({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <pre
+      className={cx(
+        "max-h-[min(20rem,55vh)] overflow-auto overscroll-contain rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 font-mono text-[11px] leading-relaxed whitespace-pre text-[var(--color-fg)] sm:text-xs",
+        className,
+      )}
+    >
+      {children}
+    </pre>
   );
 }
 
@@ -375,6 +408,9 @@ export function Field({
   );
 }
 
+const fieldControlClass =
+  "w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] outline-none transition-colors focus:border-[var(--color-fg)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-fg)_10%,transparent)]";
+
 export function Input(
   props: React.InputHTMLAttributes<HTMLInputElement>,
 ) {
@@ -382,10 +418,32 @@ export function Input(
     <input
       {...props}
       className={cx(
-        "w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-fg)] outline-none transition-colors placeholder:text-[var(--color-subtle)] focus:border-[var(--color-fg)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--color-fg)_10%,transparent)]",
+        fieldControlClass,
+        "placeholder:text-[var(--color-subtle)]",
         props.className,
       )}
     />
+  );
+}
+
+export function Select(
+  props: React.SelectHTMLAttributes<HTMLSelectElement>,
+) {
+  return (
+    <div className="relative">
+      <select
+        {...props}
+        className={cx(
+          fieldControlClass,
+          "cursor-pointer appearance-none pr-9 hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-50",
+          props.className,
+        )}
+      />
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-muted)]"
+      />
+    </div>
   );
 }
 

@@ -7,11 +7,13 @@ import {
   type ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import type { AccountType } from "@/types/ucp";
 
 export interface AppUser {
   id: string;
   email: string;
   name?: string;
+  accountType?: AccountType;
 }
 
 interface AuthResult {
@@ -23,7 +25,12 @@ interface AuthContextValue {
   loading: boolean;
   demoMode: boolean;
   signIn: (email: string, password: string) => Promise<AuthResult>;
-  signUp: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (
+    email: string,
+    password: string,
+    accountType?: AccountType,
+    name?: string,
+  ) => Promise<AuthResult>;
   signInWithOAuth: (provider: "google" | "github") => Promise<AuthResult>;
   signOut: () => Promise<void>;
 }
@@ -39,6 +46,13 @@ function readDemoUser(): AppUser | null {
   } catch {
     return null;
   }
+}
+
+function accountTypeFromMetadata(value: unknown): AccountType | undefined {
+  if (value === "client" || value === "business" || value === "admin") {
+    return value;
+  }
+  return undefined;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -59,6 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: s.user.id,
           email: s.user.email ?? "",
           name: (s.user.user_metadata?.name as string | undefined) ?? undefined,
+          accountType: accountTypeFromMetadata(
+            s.user.user_metadata?.account_type,
+          ),
         });
       }
       setLoading(false);
@@ -73,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               name:
                 (session.user.user_metadata?.name as string | undefined) ??
                 undefined,
+              accountType: accountTypeFromMetadata(
+                session.user.user_metadata?.account_type,
+              ),
             }
           : null,
       );
@@ -88,7 +108,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (demoMode || !supabase) {
         if (!email || password.length < 4)
           return { error: "Credenciales inválidas (demo)." };
-        const u = { id: "demo-user", email };
+        const previous = readDemoUser();
+        const u = {
+          id: "demo-user",
+          email,
+          name: previous?.name,
+          accountType: previous?.accountType ?? ("client" as AccountType),
+        };
         localStorage.setItem(DEMO_KEY, JSON.stringify(u));
         setUser(u);
         return {};
@@ -100,16 +126,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error?.message };
     }
 
-    async function signUp(email: string, password: string) {
+    async function signUp(
+      email: string,
+      password: string,
+      accountType: AccountType = "client",
+      name?: string,
+    ) {
       if (demoMode || !supabase) {
         if (!email || password.length < 4)
           return { error: "Usa un email y una contraseña de 4+ caracteres." };
-        const u = { id: "demo-user", email };
+        const u = { id: "demo-user", email, accountType, name: name?.trim() };
         localStorage.setItem(DEMO_KEY, JSON.stringify(u));
         setUser(u);
         return {};
       }
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            account_type: accountType,
+            name: name?.trim() || undefined,
+          },
+        },
+      });
       return { error: error?.message };
     }
 

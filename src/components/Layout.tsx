@@ -15,10 +15,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
-import { useWallet } from "@/hooks/useData";
+import { useMyBusinesses, useProfile, useWallet } from "@/hooks/useData";
 import { formatMoney } from "@/lib/money";
+import { formatUserDisplayName, userAvatarInitial } from "@/lib/user";
 import { Badge, Button, cx } from "@/components/ui";
 import ThemeToggle from "@/components/ThemeToggle";
+import type { AccountType } from "@/types/ucp";
 
 type NavItem = {
   to: string;
@@ -32,7 +34,7 @@ type NavGroup = {
   items: NavItem[];
 };
 
-const NAV_GROUPS: NavGroup[] = [
+const CLIENT_NAV_GROUPS: NavGroup[] = [
   {
     heading: "Overview",
     items: [
@@ -48,27 +50,43 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Comercio",
+    heading: "Agente",
     items: [
-      { to: "/comercio", label: "Comercio", icon: Store },
       { to: "/agente", label: "Agente MCP", icon: Bot },
     ],
+  },
+];
+
+const BUSINESS_NAV_GROUPS: NavGroup[] = [
+  {
+    heading: "Comercio",
+    items: [
+      { to: "/", label: "Inicio", icon: LayoutDashboard, end: true },
+      { to: "/comercio", label: "Comercio", icon: Store },
+      { to: "/historial", label: "Historial", icon: History },
+    ],
+  },
+  {
+    heading: "Cuenta",
+    items: [{ to: "/perfil", label: "Perfil", icon: User }],
   },
 ];
 
 function SidebarNav({
   onNavigate,
   collapsed = false,
+  groups,
 }: {
   onNavigate?: () => void;
   collapsed?: boolean;
+  groups: NavGroup[];
 }) {
   return (
     <nav
       aria-label="Navegacion principal"
       className={cx("flex flex-col", collapsed ? "gap-2" : "gap-6")}
     >
-      {NAV_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div key={group.heading} className="space-y-1">
           {collapsed ? (
             <div className="mx-auto my-2 h-px w-7 bg-[var(--color-border)]" />
@@ -134,11 +152,25 @@ function SidebarNav({
 
 export default function Layout() {
   const { user, demoMode, signOut } = useAuth();
+  const { data: profile } = useProfile();
+  const { data: myBusinesses = [] } = useMyBusinesses();
   const { data: wallet } = useWallet();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const accountType: AccountType =
+    profile?.account_type ??
+    (myBusinesses.length > 0
+      ? "business"
+      : user?.accountType ?? "client");
+  const navGroups =
+    accountType === "business" ? BUSINESS_NAV_GROUPS : CLIENT_NAV_GROUPS;
+  const displayName = formatUserDisplayName(
+    profile?.full_name || user?.name,
+    user?.email,
+  );
+  const avatarInitial = userAvatarInitial(displayName);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -153,14 +185,23 @@ export default function Layout() {
     };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    if (accountType === "business" && ["/wallet", "/agente"].includes(location.pathname)) {
+      navigate("/", { replace: true });
+    }
+    if (accountType === "client" && location.pathname === "/comercio") {
+      navigate("/", { replace: true });
+    }
+  }, [accountType, location.pathname, navigate]);
+
   async function handleSignOut() {
     await signOut();
     navigate("/login");
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <header className="z-30 flex min-h-14 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/88 px-3 py-2 backdrop-blur-md sm:gap-4 sm:px-5">
+    <div className="flex min-h-dvh flex-col overflow-hidden">
+      <header className="z-30 flex min-h-14 shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/88 px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-md sm:gap-4 sm:px-5">
         <button
           type="button"
           aria-label="Abrir menú"
@@ -188,9 +229,6 @@ export default function Layout() {
             g
           </span>
           <span className="truncate text-base font-semibold">genko</span>
-          <span className="hidden lg:inline-flex">
-            <Badge tone="brand">commerce · agéntico</Badge>
-          </span>
         </div>
 
         {demoMode ? (
@@ -199,9 +237,18 @@ export default function Layout() {
           </span>
         ) : null}
 
-        <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-4">
-          {wallet ? (
-            <div className="hidden items-center gap-3 lg:flex">
+        <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-4">
+          {accountType === "client" && wallet ? (
+            <>
+              <div className="flex flex-col items-end leading-tight lg:hidden">
+                <span className="text-[10px] uppercase tracking-wide text-[var(--color-subtle)]">
+                  Disp.
+                </span>
+                <span className="max-w-[5.5rem] truncate text-xs font-semibold sm:max-w-none sm:text-sm">
+                  {formatMoney(wallet.available_minor, wallet.currency)}
+                </span>
+              </div>
+              <div className="hidden items-center gap-3 lg:flex">
               <div className="flex flex-col items-end leading-tight">
                 <span className="text-[10px] uppercase tracking-wide text-[var(--color-subtle)]">
                   Disponible
@@ -220,12 +267,23 @@ export default function Layout() {
                   </span>
                 </div>
               ) : null}
-            </div>
+              </div>
+            </>
           ) : null}
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <div className="grid h-7 w-7 place-items-center rounded-full bg-[var(--color-surface-2)] text-xs font-semibold uppercase text-[var(--color-muted)]">
-              {(user?.email ?? "u").slice(0, 1)}
+          <ThemeToggle />
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--color-surface-2)] text-xs font-semibold uppercase text-[var(--color-muted)]">
+              {avatarInitial}
+            </div>
+            <div className="hidden min-w-0 sm:block">
+              <div className="truncate text-sm font-medium text-[var(--color-fg)]">
+                {displayName}
+              </div>
+              {user?.email ? (
+                <div className="truncate text-xs text-[var(--color-subtle)]">
+                  {user.email}
+                </div>
+              ) : null}
             </div>
             <Button variant="ghost" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />
@@ -235,7 +293,7 @@ export default function Layout() {
         </div>
       </header>
 
-      <div className="mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 gap-4 px-3 py-3 sm:px-5 sm:py-4">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1280px] flex-1 gap-3 px-3 py-3 sm:gap-4 sm:px-5 sm:py-4">
         <aside
           className={cx(
             "hidden shrink-0 overflow-hidden transition-[width] duration-300 ease-out md:block",
@@ -243,11 +301,11 @@ export default function Layout() {
           )}
         >
           <div className="h-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-[var(--shadow-card)]">
-            <SidebarNav collapsed={sidebarCollapsed} />
+            <SidebarNav collapsed={sidebarCollapsed} groups={navGroups} />
           </div>
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           <Outlet />
         </main>
       </div>
@@ -288,7 +346,10 @@ export default function Layout() {
               <X className="h-4 w-4" />
             </button>
           </div>
-          <SidebarNav onNavigate={() => setMobileOpen(false)} />
+          <SidebarNav
+            onNavigate={() => setMobileOpen(false)}
+            groups={navGroups}
+          />
         </aside>
       </div>
     </div>

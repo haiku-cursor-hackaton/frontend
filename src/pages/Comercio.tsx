@@ -3,8 +3,10 @@ import {
   Badge,
   Button,
   Card,
+  CodePre,
   Field,
   Input,
+  Page,
   SectionTitle,
   Stat,
   TabPanel,
@@ -12,13 +14,14 @@ import {
 } from "@/components/ui";
 import {
   computeMerchantStats,
+  getStoredSdkKey,
   useApiKeys,
+  useLinkMerchant,
   useMerchantDomains,
   useMyBusinesses,
-  useRegisterMerchant,
   useUsageEvents,
 } from "@/hooks/useData";
-import type { RegisterMerchantResponse } from "@/lib/api";
+import type { LinkMerchantResponse } from "@/lib/api";
 import { formatMoney } from "@/lib/money";
 import type { MerchantStats, UCPCapability } from "@/types/ucp";
 
@@ -35,26 +38,28 @@ function StatsChart({ stats }: { stats: MerchantStats }) {
   const max = Math.max(...stats.byDay.map((d) => d.queries), 1);
   return (
     <div>
-      <div className="flex h-48 items-end gap-3">
-        {stats.byDay.map((d) => (
-          <div key={d.day} className="flex flex-1 flex-col items-center gap-1">
-            <div className="flex h-40 w-full items-end justify-center gap-1">
-              <div
-                className="w-1/2 rounded-t bg-[var(--color-brand)] transition-[height] duration-500 ease-out"
-                style={{ height: `${(d.queries / max) * 100}%` }}
-                title={`${d.queries} consultas`}
-              />
-              <div
-                className="w-1/2 rounded-t bg-[var(--color-accent)] transition-[height] duration-500 ease-out"
-                style={{ height: `${(d.purchases / max) * 100}%` }}
-                title={`${d.purchases} compras`}
-              />
+      <div className="overflow-x-auto overscroll-x-contain">
+        <div className="flex h-48 min-w-[20rem] items-end gap-2 sm:gap-3">
+          {stats.byDay.map((d) => (
+            <div key={d.day} className="flex min-w-[2.5rem] flex-1 flex-col items-center gap-1">
+              <div className="flex h-40 w-full items-end justify-center gap-1">
+                <div
+                  className="w-1/2 rounded-t bg-[var(--color-brand)] transition-[height] duration-500 ease-out"
+                  style={{ height: `${(d.queries / max) * 100}%` }}
+                  title={`${d.queries} consultas`}
+                />
+                <div
+                  className="w-1/2 rounded-t bg-[var(--color-accent)] transition-[height] duration-500 ease-out"
+                  style={{ height: `${(d.purchases / max) * 100}%` }}
+                  title={`${d.purchases} compras`}
+                />
+              </div>
+              <span className="text-xs text-[var(--color-subtle)]">{d.day}</span>
             </div>
-            <span className="text-xs text-[var(--color-subtle)]">{d.day}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--color-muted)]">
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--color-muted)] sm:gap-4">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-[var(--color-brand)]" />
           Consultas agenticas
@@ -63,8 +68,8 @@ function StatsChart({ stats }: { stats: MerchantStats }) {
           <span className="h-2.5 w-2.5 rounded-sm bg-[var(--color-accent)]" />
           Compras
         </span>
-        <span className="ml-auto text-[var(--color-subtle)]">
-          Fuente: usage_events - ultimos 7 dias
+        <span className="w-full text-[var(--color-subtle)] sm:ml-auto sm:w-auto">
+          Últimos 7 días
         </span>
       </div>
     </div>
@@ -73,19 +78,25 @@ function StatsChart({ stats }: { stats: MerchantStats }) {
 
 export default function Comercio() {
   const [tab, setTab] = useState<ComercioTab>("perfil");
-  const [merchantName, setMerchantName] = useState("");
-  const [merchantCategory, setMerchantCategory] = useState("retail");
-  const [merchantRootUrl, setMerchantRootUrl] = useState("");
-  const [merchantInboundKey, setMerchantInboundKey] = useState("");
-  const [registrationResult, setRegistrationResult] =
-    useState<RegisterMerchantResponse | null>(null);
-  const [registrationError, setRegistrationError] = useState<string | null>(null);
+  const [linkRootUrl, setLinkRootUrl] = useState("");
+  const [linkInboundKey, setLinkInboundKey] = useState("");
+  const [linkResult, setLinkResult] = useState<LinkMerchantResponse | null>(
+    null,
+  );
+  const [linkError, setLinkError] = useState<string | null>(null);
   const { data: myBusinesses = [], isLoading } = useMyBusinesses();
   const business = myBusinesses[0];
-  const { data: allKeys = [] } = useApiKeys();
+  const businessIds = useMemo(() => (business ? [business.id] : []), [business]);
+  const { data: allKeys = [] } = useApiKeys({
+    businessIds,
+    enabled: businessIds.length > 0,
+  });
   const { data: domains = [] } = useMerchantDomains(business?.id);
-  const { data: usageEvents = [] } = useUsageEvents();
-  const registerMerchant = useRegisterMerchant();
+  const { data: usageEvents = [] } = useUsageEvents({
+    businessIds,
+    enabled: businessIds.length > 0,
+  });
+  const linkMerchant = useLinkMerchant(business?.id);
 
   const sdkKey = useMemo(
     () =>
@@ -93,6 +104,10 @@ export default function Comercio() {
         (k) => k.key_type === "sdk" && k.business_id === business?.id,
       ),
     [allKeys, business?.id],
+  );
+  const sdkKeyPlaintext = useMemo(
+    () => (sdkKey ? getStoredSdkKey(sdkKey.key_prefix) : undefined),
+    [sdkKey],
   );
 
   const merchantStats = useMemo(
@@ -108,6 +123,26 @@ export default function Comercio() {
     return mine.filter((e) => e.status === "error").length / mine.length;
   }, [usageEvents, business]);
 
+  async function handleLinkMerchant(e: React.FormEvent) {
+    e.preventDefault();
+    setLinkError(null);
+    setLinkResult(null);
+    try {
+      const result = await linkMerchant.mutateAsync({
+        root_url: linkRootUrl.trim(),
+        ucp_inbound_api_key: linkInboundKey.trim() || undefined,
+      });
+      setLinkResult(result);
+      setTab("integracion");
+    } catch (err) {
+      setLinkError(
+        err instanceof Error ? err.message : "No se pudo vincular la URL del comercio",
+      );
+    }
+  }
+
+  const isPending = business ? business.status !== "active" : true;
+
   if (isLoading) {
     return (
       <div className="py-12 text-center text-sm text-[var(--color-muted)]">
@@ -116,65 +151,44 @@ export default function Comercio() {
     );
   }
 
-  if (!business) {
-    async function handleRegisterMerchant(e: React.FormEvent) {
-      e.preventDefault();
-      setRegistrationError(null);
-      setRegistrationResult(null);
-      try {
-        const result = await registerMerchant.mutateAsync({
-          name: merchantName.trim(),
-          category: merchantCategory.trim() || undefined,
-          root_url: merchantRootUrl.trim(),
-          ucp_inbound_api_key: merchantInboundKey.trim() || undefined,
-        });
-        setRegistrationResult(result);
-        setTab("integracion");
-      } catch (err) {
-        setRegistrationError(
-          err instanceof Error ? err.message : "No se pudo registrar el comercio",
-        );
-      }
-    }
-
+  if (!business || isPending) {
     return (
-      <div className="flex h-full min-h-0 flex-col gap-4">
-        <h1 className="shrink-0 text-lg font-semibold">Panel de comercio</h1>
-        <TabPanel className="flex-1">
+      <Page>
+        <div className="shrink-0">
+          <h1 className="text-lg font-semibold">
+            {business ? business.name : "Panel de comercio"}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--color-muted)]">
+            Wallet y SDK key ya listas. Solo falta vincular la URL de tu tienda
+            UCP para activarla.
+          </p>
+        </div>
+        <TabPanel>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
             <Card>
-              <form className="space-y-4" onSubmit={handleRegisterMerchant}>
+              {business ? (
+                <div className="mb-4">
+                  <Badge tone="warn">Pendiente de vinculación</Badge>
+                </div>
+              ) : (
+                <div className="mb-4 rounded-lg bg-[color-mix(in_srgb,var(--color-warn)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-muted)]">
+                  Preparando tu comercio...
+                </div>
+              )}
+              <form className="space-y-4" onSubmit={handleLinkMerchant}>
                 <div>
-                  <h2 className="text-sm font-semibold">Registrar comercio UCP</h2>
+                  <h2 className="text-sm font-semibold">Vincular URL del comercio</h2>
                   <p className="mt-1 text-sm text-[var(--color-muted)]">
-                    Pega la URL raiz del comercio. Genko lee{" "}
-                    <code>/.well-known/ucp</code>, guarda el endpoint REST y emite
-                    la key que el SDK usa como <code>UCP_PLATFORM_API_KEY</code>.
+                    Pega la URL raíz de tu tienda. Genko lee{" "}
+                    <code>/.well-known/ucp</code>, guarda el endpoint REST y activa
+                    tu SDK key existente como <code>UCP_PLATFORM_API_KEY</code>.
                   </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Nombre">
-                    <Input
-                      value={merchantName}
-                      onChange={(e) => setMerchantName(e.target.value)}
-                      placeholder="Lithe"
-                      required
-                    />
-                  </Field>
-                  <Field label="Categoria">
-                    <Input
-                      value={merchantCategory}
-                      onChange={(e) => setMerchantCategory(e.target.value)}
-                      placeholder="retail"
-                    />
-                  </Field>
-                </div>
-
-                <Field label="URL raiz">
+                <Field label="URL raíz">
                   <Input
-                    value={merchantRootUrl}
-                    onChange={(e) => setMerchantRootUrl(e.target.value)}
+                    value={linkRootUrl}
+                    onChange={(e) => setLinkRootUrl(e.target.value)}
                     placeholder="https://tu-tienda.com"
                     required
                   />
@@ -183,19 +197,19 @@ export default function Comercio() {
                 <Field label="UCP_GATEWAY_API_KEY (opcional)">
                   <Input
                     type="password"
-                    value={merchantInboundKey}
-                    onChange={(e) => setMerchantInboundKey(e.target.value)}
+                    value={linkInboundKey}
+                    onChange={(e) => setLinkInboundKey(e.target.value)}
                     placeholder="Misma clave configurada en el comercio"
                   />
                   <p className="mt-1 text-xs text-[var(--color-subtle)]">
-                    Usala si el comercio protege <code>/ucp/v1/*</code>; Genko la
-                    enviara como Bearer en cada llamada REST.
+                    Úsala si el comercio protege <code>/ucp/v1/*</code>; Genko la
+                    enviará como Bearer en cada llamada REST.
                   </p>
                 </Field>
 
-                {registrationError ? (
+                {linkError ? (
                   <p className="rounded-lg bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-danger)]">
-                    {registrationError}
+                    {linkError}
                   </p>
                 ) : null}
 
@@ -203,11 +217,13 @@ export default function Comercio() {
                   <Button
                     type="submit"
                     variant="primary"
-                    disabled={registerMerchant.isPending}
+                    full
+                    className="sm:w-auto"
+                    disabled={linkMerchant.isPending || !business}
                   >
-                    {registerMerchant.isPending
-                      ? "Registrando..."
-                      : "Registrar comercio"}
+                    {linkMerchant.isPending
+                      ? "Vinculando..."
+                      : "Vincular comercio"}
                   </Button>
                 </div>
               </form>
@@ -218,86 +234,88 @@ export default function Comercio() {
                 <div>
                   <div className="text-sm font-medium">Contrato esperado</div>
                   <p className="mt-1 text-sm text-[var(--color-muted)]">
-                    El comercio debe exponer discovery y REST UCP. Lithe ya trae
-                    esa superficie con el SDK Python; el MCP publico vive en
-                    Genko.
+                    Tu tienda debe exponer discovery y REST UCP.
                   </p>
-                </div>
-                <div className="space-y-2 text-xs text-[var(--color-muted)]">
-                  <div>
-                    <code className="text-[var(--color-fg)]">
-                      GET /.well-known/ucp
-                    </code>
-                  </div>
-                  <div>
-                    <code className="text-[var(--color-fg)]">
-                      POST /ucp/v1/catalog/search
-                    </code>
-                  </div>
-                  <div>
-                    <code className="text-[var(--color-fg)]">
-                      POST /ucp/v1/checkout-sessions
-                    </code>
-                  </div>
-                  <div>
-                    <code className="text-[var(--color-fg)]">
-                      POST /ucp/v1/checkout-sessions/{"{id}"}/complete
-                    </code>
+                  <div className="mt-2 space-y-1.5 text-xs text-[var(--color-muted)]">
+                    <div>
+                      <code className="text-[var(--color-fg)]">GET /.well-known/ucp</code>
+                    </div>
+                    <div>
+                      <code className="text-[var(--color-fg)]">
+                        POST /ucp/v1/catalog/search
+                      </code>
+                    </div>
+                    <div>
+                      <code className="text-[var(--color-fg)]">
+                        POST /ucp/v1/checkout-sessions
+                      </code>
+                    </div>
+                    <div>
+                      <code className="text-[var(--color-fg)]">
+                        POST /ucp/v1/checkout-sessions/{"{id}"}/complete
+                      </code>
+                    </div>
                   </div>
                 </div>
               </div>
             </Card>
           </div>
 
-          {registrationResult ? (
+          {sdkKey && sdkKeyPlaintext ? (
             <Card className="mt-4 border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_8%,transparent)]">
               <div className="space-y-2">
                 <div className="text-sm font-medium text-[var(--color-accent)]">
-                  Comercio registrado
+                  SDK key lista (mostrada una sola vez)
                 </div>
                 <p className="text-sm text-[var(--color-muted)]">
-                  Configurala en el comercio como{" "}
-                  <code>UCP_PLATFORM_API_KEY</code>. El backend solo muestra la
-                  clave completa una vez.
+                  Configúrala en tu comercio como <code>UCP_PLATFORM_API_KEY</code>.
                 </p>
                 <code className="block break-all rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-fg)]">
-                  {registrationResult.sdk_api_key}
+                  {sdkKeyPlaintext}
                 </code>
+              </div>
+            </Card>
+          ) : sdkKey ? (
+            <Card className="mt-4">
+              <div className="space-y-1">
+                <div className="text-sm font-medium">SDK key activa</div>
+                <p className="text-xs text-[var(--color-muted)]">
+                  Prefijo <code>{sdkKey.key_prefix}...</code>. El plaintext solo se
+                  muestra al momento de emitirla; si lo perdiste, revócala y
+                  emite una nueva.
+                </p>
               </div>
             </Card>
           ) : null}
         </TabPanel>
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">{business.name}</h1>
-          <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-            <span>{business.category}</span>
-            <span className="text-[var(--color-subtle)]">-</span>
-            {business.status === "active" ? (
-              <Badge tone="accent">activo</Badge>
-            ) : business.status === "pending" ? (
-              <Badge tone="warn">pendiente</Badge>
-            ) : (
-              <Badge tone="danger">suspendido</Badge>
-            )}
+    <Page>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold">{business.name}</h1>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+              <span>{business.category}</span>
+              <span className="text-[var(--color-subtle)]">-</span>
+              {business.status === "active" ? (
+                <Badge tone="accent">activo</Badge>
+              ) : business.status === "pending" ? (
+                <Badge tone="warn">pendiente</Badge>
+              ) : (
+                <Badge tone="danger">suspendido</Badge>
+              )}
+            </div>
           </div>
         </div>
-        <span className="max-w-full break-all text-xs text-[var(--color-subtle)]">
-          business_id -{" "}
-          <code className="text-[var(--color-fg)]">{business.id}</code>
-        </span>
-      </div>
 
       <Tabs<ComercioTab>
         ariaLabel="Secciones de comercio"
         active={tab}
         onChange={setTab}
+        className="w-full"
         tabs={[
           { id: "perfil", label: "Perfil UCP" },
           { id: "integracion", label: "Integracion" },
@@ -306,10 +324,10 @@ export default function Comercio() {
       />
 
       {tab === "perfil" ? (
-        <TabPanel key="perfil" className="flex-1">
+        <TabPanel key="perfil">
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <SectionTitle hint="/.well-known/ucp">Perfil UCP</SectionTitle>
+              <SectionTitle>Perfil UCP</SectionTitle>
               <Card>
                 <div className="space-y-4">
                   <Field label="well_known_url">
@@ -335,9 +353,7 @@ export default function Comercio() {
             </div>
 
             <div>
-              <SectionTitle hint="merchant_domains">
-                Dominios verificados
-              </SectionTitle>
+              <SectionTitle>Dominios verificados</SectionTitle>
               <Card>
                 <div className="space-y-2">
                   {domains.map((d) => (
@@ -364,18 +380,25 @@ export default function Comercio() {
           </div>
         </TabPanel>
       ) : tab === "integracion" ? (
-        <TabPanel key="integracion" className="flex-1">
-          <SectionTitle hint="SDK Python (genko-sdk)">Integracion</SectionTitle>
+        <TabPanel key="integracion">
+          <SectionTitle>Integracion</SectionTitle>
           <Card>
             <div className="space-y-4">
-              {registrationResult ? (
+              {linkResult ? (
                 <div className="rounded-lg border border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] p-3">
                   <p className="mb-1 text-xs font-medium text-[var(--color-accent)]">
-                    SDK key emitida. Guardala ahora; no se volvera a mostrar:
+                    Comercio vinculado en <code>{linkResult.domain}</code>. Ya
+                    puede recibir tráfico UCP.
                   </p>
-                  <code className="break-all text-xs">
-                    {registrationResult.sdk_api_key}
-                  </code>
+                </div>
+              ) : null}
+              {sdkKeyPlaintext ? (
+                <div className="rounded-lg border border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] p-3">
+                  <p className="mb-1 text-xs font-medium text-[var(--color-accent)]">
+                    SDK key emitida al registrarte. Guárdala ahora; no se
+                    volverá a mostrar:
+                  </p>
+                  <code className="break-all text-xs">{sdkKeyPlaintext}</code>
                 </div>
               ) : null}
               <Field label={sdkKey?.label ?? "API key SDK"}>
@@ -399,7 +422,7 @@ export default function Comercio() {
                 En produccion el comercio monta discovery y REST UCP; los agentes
                 llaman al gateway de Genko en <code>POST /mcp</code>.
               </p>
-              <pre className="overflow-x-auto rounded-lg bg-[var(--color-surface-2)] px-3 py-2.5 text-xs text-[var(--color-fg)]">{`pip install -e ../python-sdk
+              <CodePre>{`pip install -e ../python-sdk
 
 # store env
 UCP_PLATFORM_URL=<URL del backend Genko>
@@ -408,12 +431,12 @@ UCP_GATEWAY_API_KEY=<opcional, si proteges REST>
 
 # expone /.well-known/ucp y /ucp/v1/*
 # /ucp/mcp solo para demos con enable_mcp=True
-# ver python-sdk/README.md`}</pre>
+# ver python-sdk/README.md`}</CodePre>
             </div>
           </Card>
         </TabPanel>
       ) : (
-        <TabPanel key="metricas" className="flex-1">
+        <TabPanel key="metricas">
           {merchantStats ? (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
@@ -458,6 +481,6 @@ UCP_GATEWAY_API_KEY=<opcional, si proteges REST>
           )}
         </TabPanel>
       )}
-    </div>
+    </Page>
   );
 }

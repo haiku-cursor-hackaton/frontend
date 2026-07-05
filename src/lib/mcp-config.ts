@@ -48,16 +48,17 @@ function buildClaudeDesktopConfig(mcpUrl: string) {
   };
 }
 
+function maskedKeyWithoutPlaintext(keyPrefix?: string): string {
+  if (keyPrefix) return `${keyPrefix}${"•".repeat(28)}`;
+  return maskApiKey("");
+}
+
 function buildEnvVars(apiKey: string, keyPrefix?: string, reveal = false) {
   let value: string;
   if (apiKey) {
     value = reveal ? apiKey : maskApiKey(apiKey);
-  } else if (keyPrefix) {
-    value = reveal
-      ? "<key no disponible en este navegador>"
-      : `${keyPrefix}${"•".repeat(28)}`;
   } else {
-    value = reveal ? "<key no disponible en este navegador>" : maskApiKey("");
+    value = maskedKeyWithoutPlaintext(keyPrefix);
   }
   return {
     [MCP_API_KEY_ENV_VAR]: value,
@@ -80,12 +81,8 @@ function buildCodexEnvInstructions(
   let key: string;
   if (apiKey) {
     key = reveal ? apiKey : maskApiKey(apiKey);
-  } else if (keyPrefix) {
-    key = reveal
-      ? "<key no disponible en este navegador>"
-      : `${keyPrefix}${"•".repeat(28)}`;
   } else {
-    key = reveal ? "<key no disponible en este navegador>" : maskApiKey("");
+    key = maskedKeyWithoutPlaintext(keyPrefix);
   }
   return [
     "# Codex (HTTP): NO uses [mcp_servers.genko.env] en config.toml.",

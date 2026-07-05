@@ -43,6 +43,10 @@ export default function Agente() {
     setApiKeyPlain(resolveStoredMcpKey(mcpKey.key_prefix) ?? "");
   }, [mcpKey?.id, mcpKey?.key_prefix]);
 
+  useEffect(() => {
+    if (!hasPlainKey) setRevealSecrets(false);
+  }, [hasPlainKey]);
+
   const configDocument = useMemo(
     () =>
       buildAgentConfigDocument(
@@ -109,10 +113,20 @@ export default function Agente() {
             <button
               type="button"
               aria-label={revealSecrets ? "Ocultar keys" : "Mostrar keys"}
-              title={revealSecrets ? "Ocultar keys" : "Mostrar keys"}
-              onClick={() => setRevealSecrets((v) => !v)}
+              title={
+                hasPlainKey
+                  ? revealSecrets
+                    ? "Ocultar keys"
+                    : "Mostrar keys"
+                  : "La key completa solo esta disponible en este navegador tras registrarte aqui"
+              }
+              onClick={() => hasPlainKey && setRevealSecrets((v) => !v)}
+              disabled={!hasPlainKey}
               className={cx(
-                "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",
+                "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[var(--color-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",
+                hasPlainKey
+                  ? "hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)]"
+                  : "cursor-not-allowed opacity-40",
                 revealSecrets && "bg-[var(--color-surface-2)] text-[var(--color-fg)]",
               )}
             >

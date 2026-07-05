@@ -59,11 +59,13 @@ export default function Login() {
           });
         }
       } catch (err) {
+        setBusy(false);
         setError(
           err instanceof Error
             ? err.message
             : "Cuenta creada, pero falló la configuración inicial.",
         );
+        return;
       }
     }
 

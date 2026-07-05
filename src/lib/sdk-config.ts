@@ -1,7 +1,8 @@
-const API_BASE = (import.meta.env.VITE_UCP_API_URL ?? "http://localhost:8000").replace(
-  /\/$/,
-  "",
-);
+import { OFFICIAL_PLATFORM_API_URL } from "@/lib/constants";
+
+const API_BASE = (
+  import.meta.env.VITE_UCP_API_URL ?? OFFICIAL_PLATFORM_API_URL
+).replace(/\/$/, "");
 
 const MASKED_KEY_FALLBACK = "••••••••••••••••";
 

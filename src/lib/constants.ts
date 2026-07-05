@@ -3,6 +3,13 @@ import type { UCPCapabilityGroup, UCPOperation } from "@/types/ucp";
 /** Bono de bienvenida en unidades menores ($15.00). */
 export const WELCOME_BONUS_MINOR = 1500;
 
+/** Backend Genko en produccion (sin /mcp). */
+export const OFFICIAL_PLATFORM_API_URL =
+  "https://genko-platform-production.up.railway.app";
+
+/** sessionStorage: evita pedir MCP key en bucle si ya se intento en esta sesion. */
+export const MCP_KEY_RECONNECT_FLAG = "genko.mcpKeyReconnectDone";
+
 /** sessionStorage key for MCP API key plaintext (shown once on issue). */
 export const MCP_KEY_STORAGE = "genko.mcpKeys";
 

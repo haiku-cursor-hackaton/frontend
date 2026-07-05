@@ -9,7 +9,13 @@ import {
   Select,
   cx,
 } from "@/components/ui";
-import { resolveStoredMcpKey, useApiKeys } from "@/hooks/useData";
+import { MCP_KEY_RECONNECT_FLAG } from "@/lib/constants";
+import {
+  resolveStoredMcpKey,
+  useApiKeys,
+  useIssueApiKey,
+  useProfile,
+} from "@/hooks/useData";
 import {
   MCP_AGENTS,
   type McpAgent,
@@ -18,7 +24,9 @@ import {
 } from "@/lib/mcp-config";
 
 export default function Agente() {
-  const { data: apiKeys = [], isLoading } = useApiKeys();
+  const { data: apiKeys = [], isLoading: keysLoading } = useApiKeys();
+  const { data: profile, isLoading: profileLoading } = useProfile();
+  const issueKey = useIssueApiKey();
   const mcpKey = useMemo(() => {
     const active = apiKeys.filter((k) => k.key_type === "mcp" && k.status === "active");
     if (active.length === 0) return null;
@@ -31,21 +39,49 @@ export default function Agente() {
   const [revealSecrets, setRevealSecrets] = useState(false);
   const [apiKeyPlain, setApiKeyPlain] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [hydratingKey, setHydratingKey] = useState(false);
 
   const mcpUrl = getMcpGatewayUrl();
   const hasPlainKey = Boolean(apiKeyPlain);
+  const isLoading = keysLoading || profileLoading;
 
   useEffect(() => {
     if (!mcpKey) {
       setApiKeyPlain("");
       return;
     }
-    setApiKeyPlain(resolveStoredMcpKey(mcpKey.key_prefix) ?? "");
+    const stored = resolveStoredMcpKey(mcpKey.key_prefix);
+    if (stored) setApiKeyPlain(stored);
   }, [mcpKey?.id, mcpKey?.key_prefix]);
 
   useEffect(() => {
     if (!hasPlainKey) setRevealSecrets(false);
   }, [hasPlainKey]);
+
+  useEffect(() => {
+    if (isLoading || profile?.account_type !== "client" || apiKeyPlain) return;
+    if (sessionStorage.getItem(MCP_KEY_RECONNECT_FLAG) === "done") return;
+
+    let cancelled = false;
+    setHydratingKey(true);
+    issueKey
+      .mutateAsync()
+      .then((result) => {
+        if (cancelled) return;
+        setApiKeyPlain(result.mcp_api_key);
+        sessionStorage.setItem(MCP_KEY_RECONNECT_FLAG, "done");
+      })
+      .catch(() => {
+        /* sin key en sesion: el usuario puede reintentar recargando */
+      })
+      .finally(() => {
+        if (!cancelled) setHydratingKey(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, profile?.account_type, apiKeyPlain, issueKey]);
 
   const configDocument = useMemo(
     () =>
@@ -82,10 +118,10 @@ export default function Agente() {
     }
   }
 
-  if (isLoading) {
+  if (isLoading || hydratingKey) {
     return (
       <div className="py-12 text-center text-sm text-[var(--color-muted)]">
-        Cargando...
+        {hydratingKey ? "Preparando tu key MCP..." : "Cargando..."}
       </div>
     );
   }
@@ -113,14 +149,8 @@ export default function Agente() {
             <button
               type="button"
               aria-label={revealSecrets ? "Ocultar keys" : "Mostrar keys"}
-              title={
-                hasPlainKey
-                  ? revealSecrets
-                    ? "Ocultar keys"
-                    : "Mostrar keys"
-                  : "La key completa solo esta disponible en este navegador tras registrarte aqui"
-              }
-              onClick={() => hasPlainKey && setRevealSecrets((v) => !v)}
+              title={revealSecrets ? "Ocultar keys" : "Mostrar keys"}
+              onClick={() => setRevealSecrets((v) => !v)}
               disabled={!hasPlainKey}
               className={cx(
                 "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[var(--color-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",

@@ -1,6 +1,9 @@
 import { getSupabase } from "@/lib/supabase";
+import { OFFICIAL_PLATFORM_API_URL } from "@/lib/constants";
 
-const API_BASE = (import.meta.env.VITE_UCP_API_URL ?? "").replace(/\/$/, "");
+const API_BASE = (
+  import.meta.env.VITE_UCP_API_URL ?? OFFICIAL_PLATFORM_API_URL
+).replace(/\/$/, "");
 
 async function readApiError(res: Response): Promise<string> {
   const raw = await res.text();

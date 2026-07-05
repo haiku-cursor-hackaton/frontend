@@ -1,83 +1,95 @@
-# Deploy — Genko portal + platform
+# Deploy on Railway (portal + platform)
 
-## Frontend (Netlify: `genko-portal.netlify.app`)
+Both services live in the **lithe** Railway project.
 
-Set in **Site settings → Environment variables** (build-time `VITE_*`):
+| Service | URL |
+| --- | --- |
+| **genko-portal** (this repo) | `https://genko-portal-production.up.railway.app` |
+| **genko-platform** (backend) | `https://genko-platform-production.up.railway.app` |
 
-| Variable | Production value |
+---
+
+## 1. Frontend service (`genko-portal`)
+
+Connect repo `haiku-cursor-hackaton/frontend` or deploy from CLI:
+
+```powershell
+cd frontend
+railway link -p lithe -e production
+railway service genko-portal   # after creating the service once
+railway up
+```
+
+**Variables** (Railway → genko-portal → Variables):
+
+| Variable | Value |
 | --- | --- |
 | `VITE_SUPABASE_URL` | `https://kfutwosjsossgqhnhjor.supabase.co` |
 | `VITE_SUPABASE_ANON_KEY` | Supabase Dashboard → API → **anon public** |
 | `VITE_UCP_API_URL` | `https://genko-platform-production.up.railway.app` |
 | `VITE_MCP_URL` | `https://genko-platform-production.up.railway.app/mcp` |
 
-Then **Deploy → Trigger deploy** (env changes require a new build).
-
-### Supabase Auth (same project)
-
-In **Authentication → URL configuration**, add:
-
-- Site URL: `https://genko-portal.netlify.app`
-- Redirect URLs: `https://genko-portal.netlify.app/**`, `http://localhost:5173/**`
-
-Enable Email (and Google/GitHub if you use OAuth on the login page).
+Redeploy after changing any `VITE_*` (baked in at Docker build time).
 
 ---
 
-## Backend (Railway: `genko-platform-production`)
+## 2. Backend service (`genko-platform`)
 
-| Variable | Production value |
+**Variables** (Railway → genko-platform → Variables):
+
+| Variable | Value |
 | --- | --- |
 | `SUPABASE_URL` | `https://kfutwosjsossgqhnhjor.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → API → **service_role** (server only) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Dashboard → API → **service_role** |
 | `PUBLIC_BASE_URL` | `https://genko-platform-production.up.railway.app` |
 | `MCP_PATH` | `/mcp` |
 | `ENVIRONMENT` | `production` |
-| `CORS_ORIGINS` | `https://genko-portal.netlify.app` |
+| `CORS_ORIGINS` | `https://genko-portal-production.up.railway.app` |
 
-No quotes around values in Railway. Redeploy after changing env.
+No quotes. Redeploy after env changes.
 
 ### Verify CORS
 
 ```powershell
 curl.exe -i -X OPTIONS "https://genko-platform-production.up.railway.app/v1/connect/client" `
-  -H "Origin: https://genko-portal.netlify.app" `
+  -H "Origin: https://genko-portal-production.up.railway.app" `
   -H "Access-Control-Request-Method: POST" `
   -H "Access-Control-Request-Headers: authorization,content-type"
 ```
 
-Expect `200` and header `access-control-allow-origin: https://genko-portal.netlify.app`.
+Expect `200` + `access-control-allow-origin: https://genko-portal-production.up.railway.app`.
+
+---
+
+## 3. Supabase Auth
+
+**Authentication → URL configuration:**
+
+- Site URL: `https://genko-portal-production.up.railway.app`
+- Redirect URLs: `https://genko-portal-production.up.railway.app/**`, `http://localhost:5173/**`
 
 ---
 
 ## Local dev
 
-**Terminal 1 — backend** (`genko-backend/`):
-
 ```powershell
-pip install -e ".[dev]"
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+# Terminal 1 — genko-backend
+uvicorn app.main:app --reload --port 8000
 
-**Terminal 2 — frontend** (`frontend/`):
-
-```powershell
+# Terminal 2 — frontend
 cp .env.example .env
-# Paste VITE_SUPABASE_ANON_KEY from Supabase Dashboard
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — `VITE_UCP_API_URL` defaults to `http://127.0.0.1:8000`.
-
 ---
 
-## Key separation (important)
+## Keys
 
-| Key | Where |
+| Key | Service |
 | --- | --- |
-| `VITE_SUPABASE_ANON_KEY` | Frontend only (public) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Backend / Railway only |
+| `VITE_SUPABASE_ANON_KEY` | genko-portal only (public) |
+| `SUPABASE_SERVICE_ROLE_KEY` | genko-platform only |
 | `gk_mcp_*` | Issued by `/v1/connect/client` for Codex |
 
-Never put `service_role` in `VITE_*` or commit it to git.
+Never put `service_role` in `VITE_*`.

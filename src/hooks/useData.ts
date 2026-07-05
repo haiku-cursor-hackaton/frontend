@@ -468,6 +468,23 @@ export function getStoredMcpKey(prefix: string): string | undefined {
   }
 }
 
+/** Resolves plaintext for the active MCP key (prefix match, or single cached key). */
+export function resolveStoredMcpKey(keyPrefix: string | null | undefined): string | undefined {
+  if (!keyPrefix) return undefined;
+  const direct = getStoredMcpKey(keyPrefix);
+  if (direct) return direct;
+  try {
+    const stored = JSON.parse(
+      sessionStorage.getItem(MCP_KEY_STORAGE) ?? "{}",
+    ) as Record<string, string>;
+    const values = Object.values(stored).filter(Boolean);
+    if (values.length === 1) return values[0];
+  } catch {
+    /* ignore */
+  }
+  return undefined;
+}
+
 export function storeMcpKey(prefix: string, key: string) {
   const stored = JSON.parse(
     sessionStorage.getItem(MCP_KEY_STORAGE) ?? "{}",

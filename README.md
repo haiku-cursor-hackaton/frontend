@@ -18,11 +18,15 @@ Frontend de **genko** — una app unificada (Cliente + Comercio) sobre **UCP (Un
 
 ```bash
 npm install
-cp .env.example .env   # opcional: rellena Supabase; sin esto corre en modo demo
+cp .env.example .env   # pega VITE_SUPABASE_ANON_KEY desde Supabase Dashboard
 npm run dev
 ```
 
 Abre http://localhost:5173.
+
+Backend local en otra terminal (`genko-backend`): `uvicorn app.main:app --reload --port 8000`.
+
+**Deploy (Netlify + Railway):** ver [`DEPLOY.md`](DEPLOY.md).
 
 > **Modo demo:** si no configuras `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`,
 > el login acepta cualquier email + contraseña (4+ caracteres) para poder

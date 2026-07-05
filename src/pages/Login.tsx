@@ -26,8 +26,14 @@ export default function Login() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setError(null);
+    if (isSignUp && accountType === "business") {
+      if (!businessCategory.trim() || !businessDescription.trim()) {
+        setError("Categoria y descripcion son obligatorias.");
+        return;
+      }
+    }
+    setBusy(true);
     const { error: authError } = isSignUp
       ? await signUp(email, password, accountType, name.trim())
       : await signIn(email, password);
@@ -48,8 +54,8 @@ export default function Login() {
           await bootstrapMerchant.mutateAsync({
             full_name: trimmedName || undefined,
             business_name: trimmedName || undefined,
-            category: businessCategory.trim() || undefined,
-            description: businessDescription.trim() || undefined,
+            category: businessCategory.trim(),
+            description: businessDescription.trim(),
           });
         }
       } catch (err) {
@@ -193,6 +199,7 @@ export default function Login() {
                     value={businessCategory}
                     onChange={(e) => setBusinessCategory(e.target.value)}
                     placeholder="Ej. moda, electronica, alimentos"
+                    required
                   />
                 </Field>
                 <Field label="Descripcion">
@@ -201,6 +208,7 @@ export default function Login() {
                     onChange={(e) => setBusinessDescription(e.target.value)}
                     placeholder="Cuenta que vende tu tienda y que la hace unica"
                     rows={3}
+                    required
                   />
                 </Field>
               </>

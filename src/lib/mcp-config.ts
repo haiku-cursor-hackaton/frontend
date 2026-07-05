@@ -25,10 +25,6 @@ function maskApiKey(apiKey: string): string {
   return "•".repeat(length);
 }
 
-function apiKeyPlaceholder(apiKey: string): string {
-  return apiKey || MASKED_KEY_FALLBACK;
-}
-
 /** Cursor / Claude Code: ~/.cursor/mcp.json, ~/.claude/settings.json */
 function buildHttpTypeConfig(mcpUrl: string) {
   return {

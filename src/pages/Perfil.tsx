@@ -15,6 +15,7 @@ import {
   useUpdateBusiness,
   useUpdateProfile,
 } from "@/hooks/useData";
+import { resolveAccountType } from "@/lib/user";
 
 export default function Perfil() {
   const { user } = useAuth();
@@ -33,7 +34,7 @@ export default function Perfil() {
   const [error, setError] = useState<string | null>(null);
   const [businessError, setBusinessError] = useState<string | null>(null);
 
-  const isBusiness = profile?.account_type === "business";
+  const isBusiness = resolveAccountType(profile, myBusinesses) === "business";
 
   useEffect(() => {
     const name = profile?.full_name || user?.name || "";

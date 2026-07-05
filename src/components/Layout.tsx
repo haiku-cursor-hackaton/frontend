@@ -17,7 +17,7 @@ import {
 import { useAuth } from "@/auth/AuthContext";
 import { useMyBusinesses, useProfile, useWallet } from "@/hooks/useData";
 import { formatMoney } from "@/lib/money";
-import { formatUserDisplayName, userAvatarInitial } from "@/lib/user";
+import { formatUserDisplayName, resolveAccountType, userAvatarInitial } from "@/lib/user";
 import { Badge, Button, cx } from "@/components/ui";
 import BrandLogo from "@/components/BrandLogo";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -160,11 +160,11 @@ export default function Layout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const accountType: AccountType =
-    profile?.account_type ??
-    (myBusinesses.length > 0
-      ? "business"
-      : user?.accountType ?? "client");
+  const accountType: AccountType = resolveAccountType(
+    profile,
+    myBusinesses,
+    user?.accountType ?? "client",
+  );
   const navGroups =
     accountType === "business" ? BUSINESS_NAV_GROUPS : CLIENT_NAV_GROUPS;
   const displayName = formatUserDisplayName(

@@ -16,7 +16,8 @@ import {
   useUsageEvents,
 } from "@/hooks/useData";
 import { OPERATION_LABEL } from "@/lib/constants";
-import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
+import { formatDateTime } from "@/lib/money";
+import { resolveAccountType } from "@/lib/user";
 import type { UCPOperation, UsageEvent } from "@/types/ucp";
 
 type Filter = "todos" | "compras" | "consultas" | "errores";
@@ -50,11 +51,11 @@ export default function Historial() {
   const { data: profile, isLoading: profileLoading } = useProfile();
   const { data: myBusinesses = [], isLoading: businessesLoading } =
     useMyBusinesses();
-  const accountType =
-    profile?.account_type ??
-    (myBusinesses.length > 0
-      ? "business"
-      : user?.accountType ?? "client");
+  const accountType = resolveAccountType(
+    profile,
+    myBusinesses,
+    user?.accountType ?? "client",
+  );
   const businessIds = useMemo(
     () => myBusinesses.map((business) => business.id),
     [myBusinesses],
@@ -155,16 +156,8 @@ export default function Historial() {
                     label: "Comercio",
                     value: (merchant?.name ?? e.business_id) || "Sin comercio",
                   },
-                  { label: "Cliente", value: e.client_name ?? "-" },
                   { label: "Capability", value: e.capability },
                   { label: "Transport", value: e.transport.toUpperCase() },
-                  { label: "Latencia", value: formatLatency(e.latency_ms) },
-                  {
-                    label: "Revenue",
-                    value: e.revenue_minor
-                      ? formatMoney(e.revenue_minor, "USD")
-                      : "-",
-                  },
                 ],
                 footer:
                   e.product_ref || e.error_code ? (
@@ -199,17 +192,14 @@ export default function Historial() {
 
         <Card padded={false} className="hidden overflow-hidden md:block">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border)] text-left text-xs text-[var(--color-subtle)]">
                   <th className="px-5 py-3 font-medium">Fecha</th>
                   <th className="px-5 py-3 font-medium">Operacion</th>
                   <th className="px-5 py-3 font-medium">Capability</th>
                   <th className="px-5 py-3 font-medium">Transport</th>
-                  <th className="px-5 py-3 font-medium">Cliente</th>
                   <th className="px-5 py-3 font-medium">Comercio</th>
-                  <th className="px-5 py-3 text-right font-medium">Latencia</th>
-                  <th className="px-5 py-3 text-right font-medium">Revenue</th>
                   <th className="px-5 py-3 font-medium">Estado</th>
                 </tr>
               </thead>
@@ -248,21 +238,7 @@ export default function Historial() {
                         {e.transport.toUpperCase()}
                       </td>
                       <td className="px-5 py-3">
-                        <div>{e.client_name ?? "-"}</div>
-                        <div className="text-xs text-[var(--color-subtle)]">
-                          req - {e.request_id}
-                        </div>
-                      </td>
-                      <td className="px-5 py-3">
                         {(merchant?.name ?? e.business_id) || "Sin comercio"}
-                      </td>
-                      <td className="px-5 py-3 text-right text-[var(--color-muted)]">
-                        {formatLatency(e.latency_ms)}
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {e.revenue_minor
-                          ? formatMoney(e.revenue_minor, "USD")
-                          : "-"}
                       </td>
                       <td className="px-5 py-3">
                         <Badge tone={STATUS[e.status].tone}>
@@ -280,7 +256,7 @@ export default function Historial() {
                 {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={6}
                       className="px-5 py-8 text-center text-sm text-[var(--color-subtle)]"
                     >
                       Sin eventos para este filtro.

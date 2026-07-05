@@ -15,7 +15,7 @@ import {
 } from "@/hooks/useData";
 import { OPERATION_LABEL } from "@/lib/constants";
 import { formatDateTime, formatLatency, formatMoney } from "@/lib/money";
-import { formatUserDisplayName } from "@/lib/user";
+import { formatUserDisplayName, resolveAccountType } from "@/lib/user";
 import type { AccountType, OrderRecord, UsageEvent } from "@/types/ucp";
 
 const STATUS_TONE: Record<UsageEvent["status"], "accent" | "warn" | "danger"> = {
@@ -185,11 +185,11 @@ export default function Dashboard() {
     useMyBusinesses();
   const { businessById } = useBusinessMap();
 
-  const accountType: AccountType =
-    profile?.account_type ??
-    (myBusinesses.length > 0
-      ? "business"
-      : user?.accountType ?? "client");
+  const accountType: AccountType = resolveAccountType(
+    profile,
+    myBusinesses,
+    user?.accountType ?? "client",
+  );
   const businessIds = useMemo(
     () => myBusinesses.map((business) => business.id),
     [myBusinesses],

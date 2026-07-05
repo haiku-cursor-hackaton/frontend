@@ -33,16 +33,9 @@ import {
   maskSecret,
 } from "@/lib/sdk-config";
 import { formatDateTime, formatMoney } from "@/lib/money";
-import type { MerchantStats, OrderRecord, UCPCapability } from "@/types/ucp";
+import type { MerchantStats, OrderRecord } from "@/types/ucp";
 
 type ComercioTab = "integracion" | "metricas";
-
-const CAPABILITY_LABEL: Partial<Record<UCPCapability, string>> = {
-  "dev.ucp.shopping.catalog.search": "catalog - search",
-  "dev.ucp.shopping.catalog.lookup": "catalog - lookup",
-  "dev.ucp.shopping.checkout": "checkout",
-  "dev.ucp.shopping.order": "order",
-};
 
 function RecentOrdersList({ orders }: { orders: OrderRecord[] }) {
   if (orders.length === 0) {
@@ -387,10 +380,6 @@ export default function Comercio() {
                         </div>
                         <Badge tone="accent">verificado</Badge>
                       </div>
-                      <p className="text-xs text-[var(--color-muted)]">
-                        UCP detectado y vinculado. Solo puedes tener un dominio;
-                        para cambiarlo, desvincula y vuelve a vincular.
-                      </p>
                       <div className="flex justify-end">
                         <Button
                           variant="secondary"
@@ -452,18 +441,6 @@ export default function Comercio() {
                       <Field label="ucp_base_url (REST)">
                         <Input readOnly value={business.ucp_base_url} />
                       </Field>
-                      <div>
-                        <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
-                          Capabilities detectadas
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {business.ucp_capabilities.map((c) => (
-                            <Badge key={c} tone="brand">
-                              {CAPABILITY_LABEL[c] ?? c}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <p className="text-sm text-[var(--color-subtle)]">

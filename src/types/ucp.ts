@@ -112,6 +112,7 @@ export interface Business {
   owner_id: string;
   name: string;
   category: string;
+  description?: string;
   status: BusinessStatus;
   well_known_url: string;
   ucp_base_url: string;

@@ -4,7 +4,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { useBootstrapAccount, useBootstrapMerchant } from "@/hooks/useData";
 import { WELCOME_BONUS_MINOR } from "@/lib/constants";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import ThemeToggle from "@/components/ThemeToggle";
 import { formatMoney } from "@/lib/money";
 import type { AccountType } from "@/types/ucp";
@@ -19,6 +19,8 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("client");
+  const [businessCategory, setBusinessCategory] = useState("");
+  const [businessDescription, setBusinessDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -46,6 +48,8 @@ export default function Login() {
           await bootstrapMerchant.mutateAsync({
             full_name: trimmedName || undefined,
             business_name: trimmedName || undefined,
+            category: businessCategory.trim() || undefined,
+            description: businessDescription.trim() || undefined,
           });
         }
       } catch (err) {
@@ -161,15 +165,45 @@ export default function Login() {
             ) : null}
 
             {isSignUp ? (
-              <Field label="Nombre">
+              <Field
+                label={
+                  accountType === "business"
+                    ? "Nombre del comercio"
+                    : "Nombre"
+                }
+              >
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Tu nombre"
+                  placeholder={
+                    accountType === "business"
+                      ? "Mi tienda"
+                      : "Tu nombre"
+                  }
                   autoComplete="name"
                   required
                 />
               </Field>
+            ) : null}
+
+            {isSignUp && accountType === "business" ? (
+              <>
+                <Field label="Categoria">
+                  <Input
+                    value={businessCategory}
+                    onChange={(e) => setBusinessCategory(e.target.value)}
+                    placeholder="Ej. moda, electronica, alimentos"
+                  />
+                </Field>
+                <Field label="Descripcion">
+                  <Textarea
+                    value={businessDescription}
+                    onChange={(e) => setBusinessDescription(e.target.value)}
+                    placeholder="Cuenta que vende tu tienda y que la hace unica"
+                    rows={3}
+                  />
+                </Field>
+              </>
             ) : null}
 
             <Field label="Email">

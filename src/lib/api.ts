@@ -104,12 +104,14 @@ export interface ConnectMerchantResponse {
   /** Plaintext only on first bootstrap. */
   sdk_api_key: string | null;
   sdk_api_key_prefix: string | null;
+  sdk_install_prompt: string | null;
 }
 
 export async function connectMerchant(body?: {
   full_name?: string;
   business_name?: string;
   category?: string;
+  description?: string;
 }): Promise<ConnectMerchantResponse> {
   const res = await apiFetch("/v1/connect/merchant", {
     method: "POST",

@@ -33,6 +33,7 @@ export type Database = {
         Row: {
           category: string | null;
           created_at: string;
+          description: string | null;
           encrypted_ucp_api_key: string | null;
           id: string;
           name: string;

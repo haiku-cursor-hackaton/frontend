@@ -426,6 +426,21 @@ export function Input(
   );
 }
 
+export function Textarea(
+  props: React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+) {
+  return (
+    <textarea
+      {...props}
+      className={cx(
+        fieldControlClass,
+        "min-h-[5.5rem] resize-y placeholder:text-[var(--color-subtle)]",
+        props.className,
+      )}
+    />
+  );
+}
+
 export function Select(
   props: React.SelectHTMLAttributes<HTMLSelectElement>,
 ) {

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import {
   Badge,
   Button,
@@ -11,21 +12,26 @@ import {
   Stat,
   TabPanel,
   Tabs,
+  cx,
 } from "@/components/ui";
 import {
   computeMerchantStats,
+  getStoredSdkInstallPrompt,
   getStoredSdkKey,
   useApiKeys,
-  useLinkMerchant,
   useMerchantDomains,
   useMyBusinesses,
   useUsageEvents,
 } from "@/hooks/useData";
-import type { LinkMerchantResponse } from "@/lib/api";
+import {
+  buildSdkInstallPrompt,
+  displaySdkInstallPrompt,
+  maskSecret,
+} from "@/lib/sdk-config";
 import { formatMoney } from "@/lib/money";
 import type { MerchantStats, UCPCapability } from "@/types/ucp";
 
-type ComercioTab = "perfil" | "integracion" | "metricas";
+type ComercioTab = "integracion" | "metricas";
 
 const CAPABILITY_LABEL: Partial<Record<UCPCapability, string>> = {
   "dev.ucp.shopping.catalog.search": "catalog - search",
@@ -76,14 +82,34 @@ function StatsChart({ stats }: { stats: MerchantStats }) {
   );
 }
 
-export default function Comercio() {
-  const [tab, setTab] = useState<ComercioTab>("perfil");
-  const [linkRootUrl, setLinkRootUrl] = useState("");
-  const [linkInboundKey, setLinkInboundKey] = useState("");
-  const [linkResult, setLinkResult] = useState<LinkMerchantResponse | null>(
-    null,
+function EyeToggle({
+  reveal,
+  onReveal,
+}: {
+  reveal: boolean;
+  onReveal: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={reveal ? "Ocultar keys" : "Mostrar keys"}
+      title={reveal ? "Ocultar keys" : "Mostrar keys"}
+      onClick={onReveal}
+      className={cx(
+        "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[var(--color-muted)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",
+        reveal && "bg-[var(--color-surface-2)] text-[var(--color-fg)]",
+      )}
+    >
+      {reveal ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+    </button>
   );
-  const [linkError, setLinkError] = useState<string | null>(null);
+}
+
+export default function Comercio() {
+  const [tab, setTab] = useState<ComercioTab>("integracion");
+  const [revealSecrets, setRevealSecrets] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
   const { data: myBusinesses = [], isLoading } = useMyBusinesses();
   const business = myBusinesses[0];
   const businessIds = useMemo(() => (business ? [business.id] : []), [business]);
@@ -96,7 +122,6 @@ export default function Comercio() {
     businessIds,
     enabled: businessIds.length > 0,
   });
-  const linkMerchant = useLinkMerchant(business?.id);
 
   const sdkKey = useMemo(
     () =>
@@ -109,6 +134,24 @@ export default function Comercio() {
     () => (sdkKey ? getStoredSdkKey(sdkKey.key_prefix) : undefined),
     [sdkKey],
   );
+  const sdkInstallPrompt = useMemo(() => {
+    if (sdkKeyPlaintext) return buildSdkInstallPrompt(sdkKeyPlaintext);
+    return getStoredSdkInstallPrompt();
+  }, [sdkKeyPlaintext]);
+
+  const displayedSdkKey = useMemo(() => {
+    if (!sdkKeyPlaintext) return null;
+    return revealSecrets ? sdkKeyPlaintext : maskSecret(sdkKeyPlaintext);
+  }, [sdkKeyPlaintext, revealSecrets]);
+
+  const displayedInstallPrompt = useMemo(() => {
+    if (!sdkInstallPrompt) return null;
+    return displaySdkInstallPrompt(
+      sdkInstallPrompt,
+      sdkKeyPlaintext,
+      revealSecrets,
+    );
+  }, [sdkInstallPrompt, sdkKeyPlaintext, revealSecrets]);
 
   const merchantStats = useMemo(
     () =>
@@ -123,25 +166,22 @@ export default function Comercio() {
     return mine.filter((e) => e.status === "error").length / mine.length;
   }, [usageEvents, business]);
 
-  async function handleLinkMerchant(e: React.FormEvent) {
-    e.preventDefault();
-    setLinkError(null);
-    setLinkResult(null);
+  const isPending = business ? business.status !== "active" : true;
+
+  async function copyText(text: string, which: "key" | "prompt") {
     try {
-      const result = await linkMerchant.mutateAsync({
-        root_url: linkRootUrl.trim(),
-        ucp_inbound_api_key: linkInboundKey.trim() || undefined,
-      });
-      setLinkResult(result);
-      setTab("integracion");
-    } catch (err) {
-      setLinkError(
-        err instanceof Error ? err.message : "No se pudo vincular la URL del comercio",
-      );
+      await navigator.clipboard.writeText(text);
+      if (which === "key") {
+        setCopiedKey(true);
+        window.setTimeout(() => setCopiedKey(false), 2000);
+      } else {
+        setCopiedPrompt(true);
+        window.setTimeout(() => setCopiedPrompt(false), 2000);
+      }
+    } catch {
+      /* ignore */
     }
   }
-
-  const isPending = business ? business.status !== "active" : true;
 
   if (isLoading) {
     return (
@@ -154,140 +194,55 @@ export default function Comercio() {
   if (!business || isPending) {
     return (
       <Page>
-        <div className="shrink-0">
-          <h1 className="text-lg font-semibold">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="shrink-0 text-lg font-semibold">
             {business ? business.name : "Panel de comercio"}
           </h1>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">
-            Wallet y SDK key ya listas. Solo falta vincular la URL de tu tienda
-            UCP para activarla.
-          </p>
-        </div>
-        <TabPanel>
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <Card>
-              {business ? (
-                <div className="mb-4">
-                  <Badge tone="warn">Pendiente de vinculación</Badge>
-                </div>
-              ) : (
-                <div className="mb-4 rounded-lg bg-[color-mix(in_srgb,var(--color-warn)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-muted)]">
-                  Preparando tu comercio...
-                </div>
-              )}
-              <form className="space-y-4" onSubmit={handleLinkMerchant}>
-                <div>
-                  <h2 className="text-sm font-semibold">Vincular URL del comercio</h2>
-                  <p className="mt-1 text-sm text-[var(--color-muted)]">
-                    Pega la URL raíz de tu tienda. Genko lee{" "}
-                    <code>/.well-known/ucp</code>, guarda el endpoint REST y activa
-                    tu SDK key existente como <code>UCP_PLATFORM_API_KEY</code>.
-                  </p>
-                </div>
-
-                <Field label="URL raíz">
-                  <Input
-                    value={linkRootUrl}
-                    onChange={(e) => setLinkRootUrl(e.target.value)}
-                    placeholder="https://tu-tienda.com"
-                    required
-                  />
-                </Field>
-
-                <Field label="UCP_GATEWAY_API_KEY (opcional)">
-                  <Input
-                    type="password"
-                    value={linkInboundKey}
-                    onChange={(e) => setLinkInboundKey(e.target.value)}
-                    placeholder="Misma clave configurada en el comercio"
-                  />
-                  <p className="mt-1 text-xs text-[var(--color-subtle)]">
-                    Úsala si el comercio protege <code>/ucp/v1/*</code>; Genko la
-                    enviará como Bearer en cada llamada REST.
-                  </p>
-                </Field>
-
-                {linkError ? (
-                  <p className="rounded-lg bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-xs text-[var(--color-danger)]">
-                    {linkError}
-                  </p>
-                ) : null}
-
-                <div className="flex justify-end">
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    full
-                    className="sm:w-auto"
-                    disabled={linkMerchant.isPending || !business}
-                  >
-                    {linkMerchant.isPending
-                      ? "Vinculando..."
-                      : "Vincular comercio"}
-                  </Button>
-                </div>
-              </form>
-            </Card>
-
-            <Card>
-              <div className="space-y-3">
-                <div>
-                  <div className="text-sm font-medium">Contrato esperado</div>
-                  <p className="mt-1 text-sm text-[var(--color-muted)]">
-                    Tu tienda debe exponer discovery y REST UCP.
-                  </p>
-                  <div className="mt-2 space-y-1.5 text-xs text-[var(--color-muted)]">
-                    <div>
-                      <code className="text-[var(--color-fg)]">GET /.well-known/ucp</code>
-                    </div>
-                    <div>
-                      <code className="text-[var(--color-fg)]">
-                        POST /ucp/v1/catalog/search
-                      </code>
-                    </div>
-                    <div>
-                      <code className="text-[var(--color-fg)]">
-                        POST /ucp/v1/checkout-sessions
-                      </code>
-                    </div>
-                    <div>
-                      <code className="text-[var(--color-fg)]">
-                        POST /ucp/v1/checkout-sessions/{"{id}"}/complete
-                      </code>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {sdkKey && sdkKeyPlaintext ? (
-            <Card className="mt-4 border-[color-mix(in_srgb,var(--color-accent)_45%,transparent)] bg-[color-mix(in_srgb,var(--color-accent)_8%,transparent)]">
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-[var(--color-accent)]">
-                  SDK key lista (mostrada una sola vez)
-                </div>
-                <p className="text-sm text-[var(--color-muted)]">
-                  Configúrala en tu comercio como <code>UCP_PLATFORM_API_KEY</code>.
-                </p>
-                <code className="block break-all rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs text-[var(--color-fg)]">
-                  {sdkKeyPlaintext}
-                </code>
-              </div>
-            </Card>
-          ) : sdkKey ? (
-            <Card className="mt-4">
-              <div className="space-y-1">
-                <div className="text-sm font-medium">SDK key activa</div>
-                <p className="text-xs text-[var(--color-muted)]">
-                  Prefijo <code>{sdkKey.key_prefix}...</code>. El plaintext solo se
-                  muestra al momento de emitirla; si lo perdiste, revócala y
-                  emite una nueva.
-                </p>
-              </div>
-            </Card>
+          {sdkKeyPlaintext || sdkInstallPrompt ? (
+            <EyeToggle
+              reveal={revealSecrets}
+              onReveal={() => setRevealSecrets((v) => !v)}
+            />
           ) : null}
-        </TabPanel>
+        </div>
+
+        <Card className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionTitle>API key SDK</SectionTitle>
+            {sdkKeyPlaintext ? (
+              <Button
+                variant="ghost"
+                className="min-h-10"
+                onClick={() => copyText(sdkKeyPlaintext, "key")}
+              >
+                {copiedKey ? "Copiado" : "Copiar"}
+              </Button>
+            ) : null}
+          </div>
+          {displayedSdkKey ? (
+            <CodePre>{displayedSdkKey}</CodePre>
+          ) : sdkKey ? (
+            <CodePre>{maskSecret("")}</CodePre>
+          ) : null}
+        </Card>
+
+        <Card className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionTitle>Coding agent prompt</SectionTitle>
+            {sdkInstallPrompt ? (
+              <Button
+                variant="ghost"
+                className="min-h-10"
+                onClick={() => copyText(sdkInstallPrompt, "prompt")}
+              >
+                {copiedPrompt ? "Copiado" : "Copiar"}
+              </Button>
+            ) : null}
+          </div>
+          {displayedInstallPrompt ? (
+            <CodePre>{displayedInstallPrompt}</CodePre>
+          ) : null}
+        </Card>
       </Page>
     );
   }
@@ -298,8 +253,10 @@ export default function Comercio() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold">{business.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
-              <span>{business.category}</span>
-              <span className="text-[var(--color-subtle)]">-</span>
+              {business.category ? <span>{business.category}</span> : null}
+              {business.category ? (
+                <span className="text-[var(--color-subtle)]">-</span>
+              ) : null}
               {business.status === "active" ? (
                 <Badge tone="accent">activo</Badge>
               ) : business.status === "pending" ? (
@@ -317,98 +274,100 @@ export default function Comercio() {
         onChange={setTab}
         className="w-full"
         tabs={[
-          { id: "perfil", label: "Perfil UCP" },
           { id: "integracion", label: "Integracion" },
           { id: "metricas", label: "Metricas", meta: "7d" },
         ]}
       />
 
-      {tab === "perfil" ? (
-        <TabPanel key="perfil">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <SectionTitle>Perfil UCP</SectionTitle>
-              <Card>
-                <div className="space-y-4">
-                  <Field label="well_known_url">
-                    <Input readOnly value={business.well_known_url} />
-                  </Field>
-                  <Field label="ucp_base_url (REST)">
-                    <Input readOnly value={business.ucp_base_url} />
-                  </Field>
-                  <div>
-                    <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
-                      Capabilities detectadas
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      {business.ucp_capabilities.map((c) => (
-                        <Badge key={c} tone="brand">
-                          {CAPABILITY_LABEL[c] ?? c}
-                        </Badge>
-                      ))}
+      {tab === "integracion" ? (
+        <TabPanel key="integracion">
+          <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <SectionTitle>Perfil UCP</SectionTitle>
+                <Card>
+                  <div className="space-y-4">
+                    <Field label="well_known_url">
+                      <Input readOnly value={business.well_known_url} />
+                    </Field>
+                    <Field label="ucp_base_url (REST)">
+                      <Input readOnly value={business.ucp_base_url} />
+                    </Field>
+                    <div>
+                      <span className="mb-1.5 block text-xs font-medium text-[var(--color-muted)]">
+                        Capabilities detectadas
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {business.ucp_capabilities.map((c) => (
+                          <Badge key={c} tone="brand">
+                            {CAPABILITY_LABEL[c] ?? c}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </Card>
+                </Card>
+              </div>
+
+              <div>
+                <SectionTitle>Dominios verificados</SectionTitle>
+                <Card>
+                  <div className="space-y-2">
+                    {domains.map((d) => (
+                      <div
+                        key={d.id}
+                        className="flex flex-col items-start gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <code className="text-[var(--color-fg)]">{d.domain}</code>
+                        {d.verified ? (
+                          <Badge tone="accent">verificado</Badge>
+                        ) : (
+                          <Badge tone="warn">pendiente</Badge>
+                        )}
+                      </div>
+                    ))}
+                    {domains.length === 0 ? (
+                      <p className="text-sm text-[var(--color-subtle)]">
+                        Sin dominios registrados.
+                      </p>
+                    ) : null}
+                  </div>
+                </Card>
+              </div>
             </div>
 
-            <div>
-              <SectionTitle>Dominios verificados</SectionTitle>
-              <Card>
-                <div className="space-y-2">
-                  {domains.map((d) => (
-                    <div
-                      key={d.id}
-                      className="flex flex-col items-start gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <code className="text-[var(--color-fg)]">{d.domain}</code>
-                      {d.verified ? (
-                        <Badge tone="accent">verificado</Badge>
-                      ) : (
-                        <Badge tone="warn">pendiente</Badge>
-                      )}
-                    </div>
-                  ))}
-                  {domains.length === 0 ? (
-                    <p className="text-sm text-[var(--color-subtle)]">
-                      Sin dominios registrados.
-                    </p>
-                  ) : null}
-                </div>
-              </Card>
-            </div>
-          </div>
-        </TabPanel>
-      ) : tab === "integracion" ? (
-        <TabPanel key="integracion">
-          <SectionTitle>Integracion</SectionTitle>
-          <Card>
+            <SectionTitle>SDK y agente</SectionTitle>
+            <Card>
             <div className="space-y-4">
-              {linkResult ? (
-                <div className="rounded-lg border border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] p-3">
-                  <p className="mb-1 text-xs font-medium text-[var(--color-accent)]">
-                    Comercio vinculado en <code>{linkResult.domain}</code>. Ya
-                    puede recibir tráfico UCP.
-                  </p>
+              {(sdkKeyPlaintext || sdkInstallPrompt) ? (
+                <div className="flex justify-end">
+                  <EyeToggle
+                    reveal={revealSecrets}
+                    onReveal={() => setRevealSecrets((v) => !v)}
+                  />
                 </div>
               ) : null}
               {sdkKeyPlaintext ? (
-                <div className="rounded-lg border border-[var(--color-accent)] bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)] p-3">
-                  <p className="mb-1 text-xs font-medium text-[var(--color-accent)]">
-                    SDK key emitida al registrarte. Guárdala ahora; no se
-                    volverá a mostrar:
-                  </p>
-                  <code className="break-all text-xs">{sdkKeyPlaintext}</code>
-                </div>
-              ) : null}
-              <Field label={sdkKey?.label ?? "API key SDK"}>
-                <div className="flex gap-2">
+                <>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      className="min-h-10"
+                      onClick={() => copyText(sdkKeyPlaintext, "key")}
+                    >
+                      {copiedKey ? "Copiado" : "Copiar key"}
+                    </Button>
+                  </div>
+                  <CodePre>{displayedSdkKey}</CodePre>
+                </>
+              ) : (
+                <Field label={sdkKey?.label ?? "API key SDK"}>
                   <Input
                     readOnly
                     value={sdkKey ? `${sdkKey.key_prefix}...` : "sin key"}
                   />
-                </div>
-              </Field>
+                </Field>
+              )}
               {sdkKey ? (
                 <div className="flex flex-wrap gap-1">
                   {sdkKey.scopes.map((s) => (
@@ -418,22 +377,26 @@ export default function Comercio() {
                   ))}
                 </div>
               ) : null}
-              <p className="text-sm text-[var(--color-muted)]">
-                En produccion el comercio monta discovery y REST UCP; los agentes
-                llaman al gateway de Genko en <code>POST /mcp</code>.
-              </p>
-              <CodePre>{`pip install -e ../python-sdk
-
-# store env
-UCP_PLATFORM_URL=<URL del backend Genko>
-UCP_PLATFORM_API_KEY=<gk_sdk_...>
-UCP_GATEWAY_API_KEY=<opcional, si proteges REST>
-
-# expone /.well-known/ucp y /ucp/v1/*
-# /ucp/mcp solo para demos con enable_mcp=True
-# ver python-sdk/README.md`}</CodePre>
+              {displayedInstallPrompt ? (
+                <>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      className="min-h-10"
+                      onClick={() =>
+                        sdkInstallPrompt && copyText(sdkInstallPrompt, "prompt")
+                      }
+                      disabled={!sdkInstallPrompt}
+                    >
+                      {copiedPrompt ? "Copiado" : "Copiar prompt"}
+                    </Button>
+                  </div>
+                  <CodePre>{displayedInstallPrompt}</CodePre>
+                </>
+              ) : null}
             </div>
           </Card>
+          </div>
         </TabPanel>
       ) : (
         <TabPanel key="metricas">

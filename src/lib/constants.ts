@@ -9,6 +9,9 @@ export const MCP_KEY_STORAGE = "genko.mcpKeys";
 /** sessionStorage key for SDK API key plaintext (shown once on issue). */
 export const SDK_KEY_STORAGE = "genko.sdkKeys";
 
+/** sessionStorage key for SDK install prompt from bootstrap. */
+export const SDK_INSTALL_PROMPT_STORAGE = "genko.sdkInstallPrompt";
+
 /** Etiquetas legibles para las operaciones publicas del gateway MCP. */
 export const OPERATION_LABEL: Record<UCPOperation, string> = {
   get_user_profile: "Perfil y wallet",

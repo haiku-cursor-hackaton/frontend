@@ -15,7 +15,8 @@ import type {
   LinkMerchantResponse,
   RegisterMerchantResponse,
 } from "@/lib/api";
-import { MCP_KEY_STORAGE, SDK_KEY_STORAGE } from "@/lib/constants";
+import { MCP_KEY_STORAGE, SDK_INSTALL_PROMPT_STORAGE, SDK_KEY_STORAGE } from "@/lib/constants";
+import { buildSdkInstallPrompt } from "@/lib/sdk-config";
 import {
   mapApiKey,
   mapBusiness,
@@ -302,6 +303,33 @@ export function useUpdateProfile() {
   });
 }
 
+export function useUpdateBusiness() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async ({
+      businessId,
+      ...fields
+    }: {
+      businessId: string;
+      category?: string;
+      description?: string;
+    }) => {
+      const sb = getSupabase();
+      const { error } = await sb
+        .from("businesses")
+        .update(fields)
+        .eq("id", businessId)
+        .eq("owner_id", user!.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
+      qc.invalidateQueries({ queryKey: queryKeys.businesses() });
+    },
+  });
+}
+
 export function useRevokeApiKey() {
   const qc = useQueryClient();
   return useMutation({
@@ -384,10 +412,22 @@ export function useBootstrapMerchant() {
       full_name?: string;
       business_name?: string;
       category?: string;
+      description?: string;
     }): Promise<ConnectMerchantResponse> => connectMerchant(body),
     onSuccess: (result) => {
       if (result.sdk_api_key && result.sdk_api_key_prefix) {
         storeSdkKey(result.sdk_api_key_prefix, result.sdk_api_key);
+      }
+      if (result.sdk_install_prompt) {
+        sessionStorage.setItem(
+          SDK_INSTALL_PROMPT_STORAGE,
+          result.sdk_install_prompt,
+        );
+      } else if (result.sdk_api_key) {
+        sessionStorage.setItem(
+          SDK_INSTALL_PROMPT_STORAGE,
+          buildSdkInstallPrompt(result.sdk_api_key),
+        );
       }
       qc.invalidateQueries({ queryKey: queryKeys.profile(user!.id) });
       qc.invalidateQueries({ queryKey: queryKeys.myBusinesses(user!.id) });
@@ -453,6 +493,15 @@ export function storeSdkKey(prefix: string, key: string) {
   ) as Record<string, string>;
   stored[prefix] = key;
   sessionStorage.setItem(SDK_KEY_STORAGE, JSON.stringify(stored));
+}
+
+export function getStoredSdkInstallPrompt(): string | undefined {
+  try {
+    const stored = sessionStorage.getItem(SDK_INSTALL_PROMPT_STORAGE);
+    return stored || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function useMcpKeys(apiKeys: ApiKey[] | undefined) {

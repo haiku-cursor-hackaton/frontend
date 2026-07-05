@@ -7,18 +7,33 @@ import {
   Input,
   Page,
   SectionTitle,
+  Textarea,
 } from "@/components/ui";
-import { useProfile, useUpdateProfile } from "@/hooks/useData";
+import {
+  useMyBusinesses,
+  useProfile,
+  useUpdateBusiness,
+  useUpdateProfile,
+} from "@/hooks/useData";
 
 export default function Perfil() {
   const { user } = useAuth();
   const { data: profile, isLoading } = useProfile();
   const updateProfile = useUpdateProfile();
+  const { data: myBusinesses = [] } = useMyBusinesses();
+  const business = myBusinesses[0];
+  const updateBusiness = useUpdateBusiness();
 
   const [fullName, setFullName] = useState("");
   const [country, setCountry] = useState("");
+  const [category, setCategory] = useState("");
+  const [description, setDescription] = useState("");
   const [saved, setSaved] = useState(false);
+  const [businessSaved, setBusinessSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [businessError, setBusinessError] = useState<string | null>(null);
+
+  const isBusiness = profile?.account_type === "business";
 
   useEffect(() => {
     const name = profile?.full_name || user?.name || "";
@@ -26,6 +41,12 @@ export default function Perfil() {
     const savedCountry = profile?.country || "";
     if (savedCountry && !country) setCountry(savedCountry);
   }, [profile, user?.name, fullName, country]);
+
+  useEffect(() => {
+    if (!business) return;
+    setCategory(business.category);
+    setDescription(business.description ?? "");
+  }, [business?.id, business?.category, business?.description]);
 
   if (isLoading) {
     return (
@@ -50,6 +71,25 @@ export default function Perfil() {
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al guardar");
+    }
+  }
+
+  async function handleBusinessSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!business) return;
+    setBusinessError(null);
+    setBusinessSaved(false);
+    try {
+      await updateBusiness.mutateAsync({
+        businessId: business.id,
+        category: category.trim() || undefined,
+        description: description.trim() || undefined,
+      });
+      setBusinessSaved(true);
+    } catch (err) {
+      setBusinessError(
+        err instanceof Error ? err.message : "Error al guardar comercio",
+      );
     }
   }
 
@@ -104,6 +144,55 @@ export default function Perfil() {
           </div>
         </form>
       </Card>
+
+      {isBusiness && business ? (
+        <>
+          {businessError ? (
+            <p className="shrink-0 text-xs text-[var(--color-danger)]">
+              {businessError}
+            </p>
+          ) : null}
+          <SectionTitle>Perfil del comercio</SectionTitle>
+          <Card>
+            <form className="space-y-4" onSubmit={handleBusinessSave}>
+              <Field label="Nombre del comercio">
+                <Input readOnly value={business.name} />
+              </Field>
+              <Field label="Categoria">
+                <Input
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Ej. moda, electronica, alimentos"
+                />
+              </Field>
+              <Field label="Descripcion">
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Cuenta que vende tu tienda y que la hace unica"
+                  rows={4}
+                />
+              </Field>
+              <div className="flex items-center justify-end gap-2">
+                {businessSaved ? (
+                  <span className="text-xs text-[var(--color-accent)]">
+                    Guardado
+                  </span>
+                ) : null}
+                <Button
+                  type="submit"
+                  variant="primary"
+                  full
+                  className="sm:w-auto"
+                  disabled={updateBusiness.isPending}
+                >
+                  {updateBusiness.isPending ? "Guardando..." : "Guardar"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </>
+      ) : null}
     </Page>
   );
 }

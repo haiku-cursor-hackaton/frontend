@@ -3,12 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useBootstrapAccount, useBootstrapMerchant } from "@/hooks/useData";
 import { WELCOME_BONUS_MINOR } from "@/lib/constants";
-import { isSupabaseConfigured } from "@/lib/supabase";
+import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import BrandLogo from "@/components/BrandLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import { formatMoney } from "@/lib/money";
 import type { AccountType } from "@/types/ucp";
+
+async function isClientAccountSession(): Promise<boolean> {
+  const sb = getSupabase();
+  if (!sb) return true;
+  const { data } = await sb.auth.getSession();
+  const accountType = data.session?.user.user_metadata?.account_type;
+  return accountType !== "business";
+}
 
 export default function Login() {
   const { signIn, signUp, signInWithOAuth, demoMode } = useAuth();
@@ -42,6 +50,22 @@ export default function Login() {
       setBusy(false);
       setError(authError);
       return;
+    }
+
+    if (!isSignUp && isSupabaseConfigured) {
+      try {
+        if (await isClientAccountSession()) {
+          await bootstrap.mutateAsync({});
+        }
+      } catch (err) {
+        setBusy(false);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "No se pudo cargar la key MCP.",
+        );
+        return;
+      }
     }
 
     if (isSignUp && isSupabaseConfigured) {

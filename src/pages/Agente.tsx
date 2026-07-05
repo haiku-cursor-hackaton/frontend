@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import {
   Button,
@@ -9,7 +9,7 @@ import {
   Select,
   cx,
 } from "@/components/ui";
-import { resolveStoredMcpKey, useApiKeys } from "@/hooks/useData";
+import { resolveStoredMcpKey, useApiKeys, useIssueApiKey } from "@/hooks/useData";
 import {
   MCP_AGENTS,
   type McpAgent,
@@ -19,6 +19,7 @@ import {
 
 export default function Agente() {
   const { data: apiKeys = [], isLoading } = useApiKeys();
+  const issueKey = useIssueApiKey();
   const mcpKey = useMemo(() => {
     const active = apiKeys.filter((k) => k.key_type === "mcp" && k.status === "active");
     if (active.length === 0) return null;
@@ -31,6 +32,7 @@ export default function Agente() {
   const [revealSecrets, setRevealSecrets] = useState(false);
   const [apiKeyPlain, setApiKeyPlain] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const hydratedRef = useRef(false);
 
   const mcpUrl = getMcpGatewayUrl();
   const hasPlainKey = Boolean(apiKeyPlain);
@@ -42,6 +44,18 @@ export default function Agente() {
     }
     setApiKeyPlain(resolveStoredMcpKey(mcpKey.key_prefix) ?? "");
   }, [mcpKey?.id, mcpKey?.key_prefix]);
+
+  useEffect(() => {
+    if (isLoading || apiKeyPlain || issueKey.isPending || hydratedRef.current) return;
+    hydratedRef.current = true;
+    issueKey.mutate();
+  }, [isLoading, apiKeyPlain, issueKey.isPending, issueKey.mutate]);
+
+  useEffect(() => {
+    if (issueKey.data?.mcp_api_key) {
+      setApiKeyPlain(issueKey.data.mcp_api_key);
+    }
+  }, [issueKey.data]);
 
   useEffect(() => {
     if (!hasPlainKey) setRevealSecrets(false);
@@ -118,9 +132,9 @@ export default function Agente() {
                   ? revealSecrets
                     ? "Ocultar keys"
                     : "Mostrar keys"
-                  : "La key completa solo esta disponible en este navegador tras registrarte aqui"
+                  : "Cargando key..."
               }
-              onClick={() => hasPlainKey && setRevealSecrets((v) => !v)}
+              onClick={() => setRevealSecrets((v) => !v)}
               disabled={!hasPlainKey}
               className={cx(
                 "grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[var(--color-muted)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_srgb,var(--color-fg)_15%,transparent)]",

@@ -19,6 +19,7 @@ import { useMyBusinesses, useProfile, useWallet } from "@/hooks/useData";
 import { formatMoney } from "@/lib/money";
 import { formatUserDisplayName, userAvatarInitial } from "@/lib/user";
 import { Badge, Button, cx } from "@/components/ui";
+import BrandLogo from "@/components/BrandLogo";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { AccountType } from "@/types/ucp";
 
@@ -224,12 +225,7 @@ export default function Layout() {
           )}
         </button>
 
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--color-brand-strong)] text-xs font-bold text-[var(--color-on-brand)]">
-            g
-          </span>
-          <span className="truncate text-base font-semibold">genko</span>
-        </div>
+        <BrandLogo className="h-[26px]" />
 
         {demoMode ? (
           <span className="hidden sm:inline-flex">
@@ -331,12 +327,7 @@ export default function Layout() {
           )}
         >
           <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="grid h-6 w-6 place-items-center rounded-md bg-[var(--color-brand-strong)] text-xs font-bold text-[var(--color-on-brand)]">
-                g
-              </span>
-              <span className="text-base font-semibold">genko</span>
-            </div>
+            <BrandLogo className="h-[28px]" />
             <button
               type="button"
               aria-label="Cerrar menú"
